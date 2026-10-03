@@ -28,9 +28,11 @@ private:
 
     void PopulateCategories();
     void OnStartClicked();
+    void OnAddCategoryClicked();
 
     HWND m_hWnd = nullptr;
     HWND m_hComboCategory = nullptr;
+    HWND m_hBtnAddCategory = nullptr;
     HWND m_hEditDuration = nullptr;
     HWND m_hBtnStart = nullptr;
     HWND m_hBtn25 = nullptr;

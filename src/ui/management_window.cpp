@@ -101,6 +101,7 @@ bool ManagementWindow::Create() {
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    wc.lpszClassName = MANAGEMENT_WINDOW_CLASS;
     RegisterClassExW(&wc);
 
     WNDCLASSEXW wcPanel{};

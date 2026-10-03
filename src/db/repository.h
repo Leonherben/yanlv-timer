@@ -21,6 +21,7 @@ public:
     std::vector<Category> GetAllCategories();
     int64_t AddCategory(const std::wstring& name);
     bool UpdateCategoryName(int64_t id, const std::wstring& newName);
+    bool DeleteCategory(int64_t id);
     std::wstring GetCategoryName(int64_t id);
 
     // 学习记录管理

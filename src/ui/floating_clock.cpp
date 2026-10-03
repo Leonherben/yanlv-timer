@@ -267,7 +267,7 @@ void FloatingClock::UpdateDisplay(int64_t remainingSeconds, TimerState state) {
         wchar_t buf[32];
         swprintf_s(buf, L"%02d:%02d:%02d", localTm.tm_hour, localTm.tm_min, localTm.tm_sec);
         m_timeString = buf;
-        m_statusString = L"时钟";
+        m_statusString = L"CLOCK";
         if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.14f, 0.39f, 0.92f, 1.0f)); // #2563EB
     } else {
         int64_t hrs = remainingSeconds / 3600;
@@ -284,24 +284,24 @@ void FloatingClock::UpdateDisplay(int64_t remainingSeconds, TimerState state) {
 
         switch (state) {
         case TimerState::Idle:
-            m_statusString = L"待开始";
+            m_statusString = L"IDLE";
             if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.23f, 0.51f, 0.96f, 1.0f)); // #3B82F6
             break;
         case TimerState::Studying:
-            m_statusString = L"专注中";
+            m_statusString = L"FOCUS";
             if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.14f, 0.39f, 0.92f, 1.0f)); // #2563EB
             break;
         case TimerState::Paused:
-            m_statusString = L"已暂停";
+            m_statusString = L"PAUSE";
             if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.92f, 0.55f, 0.10f, 1.0f)); // #EA580C
             break;
         case TimerState::BreakPending:
-            m_statusString = L"待休息";
-            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.09f, 0.64f, 0.29f, 1.0f));
+            m_statusString = L"BREAK";
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.224f, 0.773f, 0.733f, 1.0f)); // #39C5BB
             break;
         case TimerState::Breaking:
-            m_statusString = L"休息中";
-            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.09f, 0.64f, 0.29f, 1.0f)); // #16A34A
+            m_statusString = L"REST";
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.224f, 0.773f, 0.733f, 1.0f)); // #39C5BB
             break;
         }
     }
@@ -337,12 +337,12 @@ void FloatingClock::Render() {
     }
 
     // 绘制左侧状态指示点 (圆润呼吸指示点)
-    float dotX = 18.0f;
+    float dotX = 16.0f;
     float dotY = static_cast<float>(m_height) / 2.0f;
     m_dcRenderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(dotX, dotY), 4.2f, 4.2f), m_brushAccent);
 
-    // 绘制状态文字 (点右侧微标)
-    float statusW = 38.0f;
+    // 绘制状态文字 (点右侧微标，英文大写)
+    float statusW = 46.0f;
     D2D1_RECT_F statusRect = D2D1::RectF(dotX + 6.0f, 4.0f, dotX + 6.0f + statusW, static_cast<float>(m_height) - 4.0f);
     m_dcRenderTarget->DrawText(
         m_statusString.c_str(),
@@ -403,12 +403,12 @@ void FloatingClock::ApplyConfig(const AppConfig& config) {
     m_showRealTimeWhenIdle = config.showRealTimeWhenIdle;
     SetAlwaysOnTop(config.alwaysOnTop);
 
-    int targetW = 188;
+    int targetW = 196;
     int targetH = 54;
-    if (m_fontSize == 18) { targetW = 168; targetH = 48; }
-    else if (m_fontSize == 22) { targetW = 188; targetH = 54; }
-    else if (m_fontSize == 26) { targetW = 214; targetH = 60; }
-    else if (m_fontSize == 32) { targetW = 248; targetH = 68; }
+    if (m_fontSize == 18) { targetW = 176; targetH = 48; }
+    else if (m_fontSize == 22) { targetW = 196; targetH = 54; }
+    else if (m_fontSize == 26) { targetW = 224; targetH = 60; }
+    else if (m_fontSize == 32) { targetW = 258; targetH = 68; }
 
     RecreateBitmapAndTarget(targetW, targetH);
     UpdateDisplay(m_currentSeconds, m_currentState);

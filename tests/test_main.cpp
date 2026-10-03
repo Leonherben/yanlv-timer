@@ -43,6 +43,36 @@ bool TestDatabaseAndCategories() {
     TEST_ASSERT(renamed, "Failed to rename category");
     TEST_ASSERT(repo.GetCategoryName(catId) == L"数据结构与算法", "Renamed category name mismatch");
 
+    // 4. 测试删除分类
+    // 4.1 默认未分类 (id=1) 绝不可删除
+    TEST_ASSERT(!repo.DeleteCategory(1), "Default category (id=1) should never be deleted");
+
+    // 4.2 添加一条属于 catId 的记录，验证删除分类后记录被安全迁移至 id=1
+    yanlv::StudyRecord rec;
+    rec.categoryId = catId;
+    rec.startTime = 1700000000;
+    rec.endTime = 1700001500;
+    rec.plannedDuration = 1500;
+    rec.actualDuration = 1500;
+    rec.finishType = yanlv::FinishType::Normal;
+    int64_t recId = repo.AddRecord(rec);
+    TEST_ASSERT(recId > 0, "Failed to insert record under catId");
+
+    // 删除自定义分类
+    bool deleted = repo.DeleteCategory(catId);
+    TEST_ASSERT(deleted, "Failed to delete custom category");
+
+    // 校验记录分类是否已自动变更为 1 ("未分类")，数据 100% 保留
+    auto records = repo.GetRecords();
+    TEST_ASSERT(!records.empty(), "Records should not be lost after category deletion");
+    TEST_ASSERT(records[0].categoryId == 1, "Deleted category record must be migrated to category id=1");
+
+    // 校验 GetAllCategories 不再包含 catId
+    cats = repo.GetAllCategories();
+    for (const auto& c : cats) {
+        TEST_ASSERT(c.id != catId, "Deleted category still exists in GetAllCategories");
+    }
+
     repo.Close();
     if (fs::exists("test_yanlv.db")) fs::remove("test_yanlv.db");
     std::cout << "[PASS] Database and Category Management passed!" << std::endl;

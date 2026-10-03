@@ -43,6 +43,7 @@ private:
     void OnDeleteRecord();
     void OnAddCategory();
     void OnRenameCategory();
+    void OnDeleteCategory();
     void OnBrowseMedia();
     void OnSaveSettings();
 
@@ -102,6 +103,7 @@ private:
     HWND m_hEditNewCat = nullptr;
     HWND m_hBtnAddCat = nullptr;
     HWND m_hBtnRenameCat = nullptr;
+    HWND m_hBtnDeleteCat = nullptr;
     HWND m_hBtnSaveSettings = nullptr;
     HWND m_hBtnCheckUpdate = nullptr;
     HWND m_hBtnOpenDataDir = nullptr;

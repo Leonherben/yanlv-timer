@@ -224,13 +224,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         int64_t mins = remaining / 60;
         int64_t secs = remaining % 60;
         if (st == yanlv::TimerState::Studying) {
-            swprintf_s(tipBuf, L"言律时钟 - 专注中 (%02lld:%02lld)", mins, secs);
+            swprintf_s(tipBuf, L"言律时钟 - FOCUS (%02lld:%02lld)", mins, secs);
         } else if (st == yanlv::TimerState::Paused) {
-            swprintf_s(tipBuf, L"言律时钟 - 已暂停 (%02lld:%02lld)", mins, secs);
+            swprintf_s(tipBuf, L"言律时钟 - PAUSE (%02lld:%02lld)", mins, secs);
         } else if (st == yanlv::TimerState::Breaking) {
-            swprintf_s(tipBuf, L"言律时钟 - 休息中 (%02lld:%02lld)", mins, secs);
+            swprintf_s(tipBuf, L"言律时钟 - REST (%02lld:%02lld)", mins, secs);
         } else {
-            swprintf_s(tipBuf, L"言律时钟 - 待开始");
+            swprintf_s(tipBuf, L"言律时钟 - IDLE");
         }
         yanlv::TrayIcon::Instance().UpdateTooltip(tipBuf);
     });

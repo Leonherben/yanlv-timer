@@ -181,6 +181,46 @@ bool Repository::UpdateCategoryName(int64_t id, const std::wstring& newName) {
     return success;
 }
 
+bool Repository::DeleteCategory(int64_t id) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_db || id <= 1) return false; // 默认类别 1 ("未分类") 绝不允许删除
+
+    sqlite3_exec(m_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
+
+    // 1. 将原先属于该类别的所有历史学习记录安全迁移重置为“未分类”(id=1)
+    const char* reassignSql = "UPDATE records SET category_id = 1 WHERE category_id = ?;";
+    sqlite3_stmt* stmtReassign = nullptr;
+    if (sqlite3_prepare_v2(m_db, reassignSql, -1, &stmtReassign, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(stmtReassign, 1, id);
+        sqlite3_step(stmtReassign);
+        sqlite3_finalize(stmtReassign);
+    }
+
+    // 2. 如果 active_session 暂存会话正在专注该类别，重置为 1
+    const char* sessionSql = "UPDATE active_session SET category_id = 1 WHERE category_id = ?;";
+    sqlite3_stmt* stmtSession = nullptr;
+    if (sqlite3_prepare_v2(m_db, sessionSql, -1, &stmtSession, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(stmtSession, 1, id);
+        sqlite3_step(stmtSession);
+        sqlite3_finalize(stmtSession);
+    }
+
+    // 3. 从 categories 表中删除该类别
+    const char* delSql = "DELETE FROM categories WHERE id = ?;";
+    sqlite3_stmt* stmtDel = nullptr;
+    bool success = false;
+    if (sqlite3_prepare_v2(m_db, delSql, -1, &stmtDel, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(stmtDel, 1, id);
+        success = (sqlite3_step(stmtDel) == SQLITE_DONE);
+        sqlite3_finalize(stmtDel);
+    }
+
+    sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
+    sqlite3_wal_checkpoint_v2(m_db, nullptr, SQLITE_CHECKPOINT_PASSIVE, nullptr, nullptr);
+
+    return success;
+}
+
 std::wstring Repository::GetCategoryName(int64_t id) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_db) return L"";

@@ -9,7 +9,7 @@
 namespace yanlv {
 
 namespace {
-const wchar_t* const VERSION_STRING = L"v1.0.0";
+const wchar_t* const VERSION_STRING = L"v1.0.1";
 const char* const GITHUB_REPO_HOST = "api.github.com";
 const wchar_t* const GITHUB_REPO_HOST_W = L"api.github.com";
 const wchar_t* const GITHUB_RELEASES_API_PATH = L"/repos/Leonherben/yanlv-timer/releases/latest";
@@ -226,7 +226,7 @@ UpdateInfo Updater::CheckForUpdatesSync() {
     info.releaseUrl = Utf8ToWide(urlStr.empty() ? "https://github.com/Leonherben/yanlv-timer/releases" : urlStr);
     info.downloadUrl = Utf8ToWide(dlStr);
 
-    std::string curVerUtf8 = "v1.0.0";
+    std::string curVerUtf8 = "v1.0.1";
     bool hasNew = false;
     CompareVersions(curVerUtf8, tagStr, hasNew);
     info.hasUpdate = hasNew;

@@ -56,6 +56,7 @@ enum ControlId {
     ID_EDIT_NEW_CAT,
     ID_BTN_ADD_CAT,
     ID_BTN_RENAME_CAT,
+    ID_BTN_DELETE_CAT,
     ID_RADIO_IDLE_REALTIME,
     ID_RADIO_IDLE_DURATION,
     ID_COMBO_OPACITY,
@@ -437,7 +438,7 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     SendMessage(m_hComboTextColor, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
     SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"曜石黑 (推荐)"));
     SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"晨曦蓝"));
-    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"翡翠绿"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"初音青绿 (#39C5BB)"));
     SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"活力橙"));
     SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"优雅紫"));
     SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"极净白 (暗底)"));
@@ -554,6 +555,22 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_RENAME_CAT), hInstance, nullptr
     );
 
+    m_hBtnDeleteCat = CreateWindowW(
+        L"BUTTON", L"删除选中类别",
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        370, 334, 130, 30,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_DELETE_CAT), hInstance, nullptr
+    );
+
+    HWND hLblCatTips = CreateWindowW(
+        L"STATIC",
+        L"★ 提示：默认'未分类'不可删除；删除后记录将自动转入'未分类'保留",
+        WS_CHILD | WS_VISIBLE,
+        290, 372, 340, 20,
+        m_hPanelSettings, nullptr, hInstance, nullptr
+    );
+    SendMessage(hLblCatTips, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
     // ==========================================
     // 4. 保存设置与系统更新
     // ==========================================
@@ -580,7 +597,7 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
 
     HWND hLblVersionTips = CreateWindowW(
         L"STATIC",
-        L"言律时钟 v1.0.0  |  ★ 提示：所有学习数据保存在用户独立目录，更新后 100% 完整保留",
+        L"言律时钟 v1.0.1  |  ★ 提示：所有学习数据保存在用户独立目录，更新后 100% 完整保留",
         WS_CHILD | WS_VISIBLE,
         16, 468, 614, 20,
         m_hPanelSettings, nullptr, hInstance, nullptr
@@ -727,7 +744,7 @@ void ManagementWindow::RefreshSettings() {
     SendMessage(m_hComboFontSize, CB_SETCURSEL, fontSel, 0);
 
     // 4. 文字颜色
-    const char* const colors[] = { "#0F172A", "#2563EB", "#059669", "#EA580C", "#7C3AED", "#FFFFFF" };
+    const char* const colors[] = { "#0F172A", "#2563EB", "#39C5BB", "#EA580C", "#7C3AED", "#FFFFFF" };
     int colSel = 0;
     for (int i = 0; i < 6; ++i) {
         if (config.clockTextColor == colors[i]) {
@@ -850,6 +867,33 @@ void ManagementWindow::OnRenameCategory() {
     }
 }
 
+void ManagementWindow::OnDeleteCategory() {
+    int sel = static_cast<int>(SendMessage(m_hListCategories, LB_GETCURSEL, 0, 0));
+    if (sel < 0 || sel >= static_cast<int>(m_cachedCategories.size())) {
+        MessageBoxW(m_hWnd, L"请先在列表中选中一个要删除的类别！", L"提示", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    const auto& cat = m_cachedCategories[sel];
+    if (cat.id == 1) {
+        MessageBoxW(m_hWnd, L"“未分类”为系统默认基础类别，不可删除！", L"提示", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    std::wstring prompt = L"确定要删除类别【" + cat.name + L"】吗？\n\n★ 数据安全保证：\n该类别下的所有历史学习记录将自动完整保留并转入“未分类”，您的总专注时长与统计看板不受任何影响。";
+    int ret = MessageBoxW(m_hWnd, prompt.c_str(), L"确认删除类别", MB_YESNO | MB_ICONQUESTION);
+    if (ret == IDYES) {
+        if (Repository::Instance().DeleteCategory(cat.id)) {
+            SetWindowTextW(m_hEditNewCat, L"");
+            RefreshSettings();
+            RefreshStats();
+            RefreshRecords();
+        } else {
+            MessageBoxW(m_hWnd, L"删除类别失败！", L"错误", MB_OK | MB_ICONERROR);
+        }
+    }
+}
+
 void ManagementWindow::OnBrowseMedia() {
     wchar_t fileName[MAX_PATH] = L"";
     OPENFILENAMEW ofn{};
@@ -888,7 +932,7 @@ void ManagementWindow::OnSaveSettings() {
 
     // 4. 文字颜色
     int colorIdx = static_cast<int>(SendMessage(m_hComboTextColor, CB_GETCURSEL, 0, 0));
-    const char* const colors[] = { "#0F172A", "#2563EB", "#059669", "#EA580C", "#7C3AED", "#FFFFFF" };
+    const char* const colors[] = { "#0F172A", "#2563EB", "#39C5BB", "#EA580C", "#7C3AED", "#FFFFFF" };
     if (colorIdx >= 0 && colorIdx < 6) {
         config.clockTextColor = colors[colorIdx];
     }
@@ -1045,7 +1089,7 @@ LRESULT ManagementWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
             SelectObject(hdc, m_hFont);
             DrawTextW(hdc, btnText, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             return TRUE;
-        } else if (id == ID_BTN_DELETE_RECORD) {
+        } else if (id == ID_BTN_DELETE_RECORD || id == ID_BTN_DELETE_CAT) {
             bool isDown = (dis->itemState & ODS_SELECTED) != 0;
             COLORREF bgCol = isDown ? RGB(254, 242, 242) : RGB(255, 255, 255);
             COLORREF borderCol = isDown ? RGB(248, 113, 113) : RGB(254, 202, 202);
@@ -1059,10 +1103,12 @@ LRESULT ManagementWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
             DeleteObject(hBr);
             DeleteObject(hPen);
 
+            wchar_t btnText[64] = {0};
+            GetWindowTextW(dis->hwndItem, btnText, 64);
             SetBkMode(hdc, TRANSPARENT);
             SetTextColor(hdc, RGB(220, 38, 38));
             SelectObject(hdc, m_hFont);
-            DrawTextW(hdc, L"删除此记录", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            DrawTextW(hdc, btnText, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             return TRUE;
         }
         break;
@@ -1094,6 +1140,9 @@ LRESULT ManagementWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
             return 0;
         } else if (id == ID_BTN_RENAME_CAT) {
             OnRenameCategory();
+            return 0;
+        } else if (id == ID_BTN_DELETE_CAT) {
+            OnDeleteCategory();
             return 0;
         } else if (id == ID_BTN_BROWSE_MEDIA) {
             OnBrowseMedia();

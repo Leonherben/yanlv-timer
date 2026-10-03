@@ -1,6 +1,7 @@
 #include "src/ui/management_window.h"
 #include "src/ui/floating_clock.h"
 #include "src/db/repository.h"
+#include "src/utils/updater.h"
 #include <commctrl.h>
 #include <commdlg.h>
 #include <ctime>
@@ -67,7 +68,9 @@ enum ControlId {
     ID_BTN_BROWSE_MEDIA,
     ID_RADIO_VIDEO_MUTED,
     ID_RADIO_VIDEO_AUDIO,
-    ID_BTN_SAVE_SETTINGS
+    ID_BTN_SAVE_SETTINGS,
+    ID_BTN_CHECK_UPDATE,
+    ID_BTN_OPEN_DATA_DIR
 };
 
 std::wstring FormatDuration(int64_t seconds) {
@@ -552,7 +555,7 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     );
 
     // ==========================================
-    // 4. 保存设置主按钮
+    // 4. 保存设置与系统更新
     // ==========================================
     m_hBtnSaveSettings = CreateWindowW(
         L"BUTTON", L"★ 保存并应用所有设置",
@@ -560,6 +563,29 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
         16, 420, 220, 38,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_SAVE_SETTINGS), hInstance, nullptr
     );
+
+    m_hBtnCheckUpdate = CreateWindowW(
+        L"BUTTON", L"🚀 检查新版本",
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        246, 420, 160, 38,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_CHECK_UPDATE), hInstance, nullptr
+    );
+
+    m_hBtnOpenDataDir = CreateWindowW(
+        L"BUTTON", L"📂 打开数据目录 (备份)",
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        416, 420, 214, 38,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_OPEN_DATA_DIR), hInstance, nullptr
+    );
+
+    HWND hLblVersionTips = CreateWindowW(
+        L"STATIC",
+        L"言律时钟 v1.0.0  |  ★ 提示：所有学习数据保存在用户独立目录，更新后 100% 完整保留",
+        WS_CHILD | WS_VISIBLE,
+        16, 468, 614, 20,
+        m_hPanelSettings, nullptr, hInstance, nullptr
+    );
+    SendMessage(hLblVersionTips, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 }
 
 void ManagementWindow::SwitchTab(int tabIndex) {
@@ -998,7 +1024,7 @@ LRESULT ManagementWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
             SelectObject(hdc, m_hFontBold);
             DrawTextW(hdc, L"★ 保存并应用所有设置", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             return TRUE;
-        } else if (id == ID_BTN_CHANGE_CAT || id == ID_BTN_ADD_CAT || id == ID_BTN_RENAME_CAT || id == ID_BTN_BROWSE_MEDIA) {
+        } else if (id == ID_BTN_CHANGE_CAT || id == ID_BTN_ADD_CAT || id == ID_BTN_RENAME_CAT || id == ID_BTN_BROWSE_MEDIA || id == ID_BTN_CHECK_UPDATE || id == ID_BTN_OPEN_DATA_DIR) {
             bool isDown = (dis->itemState & ODS_SELECTED) != 0;
             COLORREF bgCol = isDown ? RGB(241, 245, 249) : RGB(255, 255, 255);
             COLORREF borderCol = isDown ? RGB(148, 163, 184) : RGB(226, 232, 240);
@@ -1074,6 +1100,12 @@ LRESULT ManagementWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
             return 0;
         } else if (id == ID_BTN_SAVE_SETTINGS) {
             OnSaveSettings();
+            return 0;
+        } else if (id == ID_BTN_CHECK_UPDATE) {
+            Updater::CheckForUpdatesAsync(m_hWnd, false);
+            return 0;
+        } else if (id == ID_BTN_OPEN_DATA_DIR) {
+            Updater::OpenDataDirectory(m_hWnd);
             return 0;
         }
         break;

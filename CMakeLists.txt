@@ -31,6 +31,7 @@ set(SOURCES
     src/db/repository.cpp
     src/core/timer_engine.cpp
     src/core/power_listener.cpp
+    src/utils/updater.cpp
     src/ui/d2d_renderer.cpp
     src/ui/floating_clock.cpp
     src/ui/quick_start_popup.cpp
@@ -53,6 +54,7 @@ target_link_libraries(YanlvTimer PRIVATE
     ole32
     uuid
     shlwapi
+    winhttp
     mf
     mfplat
     mfuuid
@@ -68,10 +70,12 @@ if(BUILD_TESTS)
         src/db/sqlite3.c
         src/db/repository.cpp
         src/core/timer_engine.cpp
+        src/utils/updater.cpp
         tests/test_main.cpp
     )
     target_link_libraries(test_core PRIVATE
         shlwapi
+        winhttp
     )
 endif()
 

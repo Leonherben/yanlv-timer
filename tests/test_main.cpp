@@ -6,6 +6,7 @@
 #include "src/core/timer_types.h"
 #include "src/db/repository.h"
 #include "src/core/timer_engine.h"
+#include "src/utils/updater.h"
 
 #define TEST_ASSERT(cond, msg) \
     do { \
@@ -269,6 +270,56 @@ bool TestConfigPersistenceAndClockPosition() {
     return true;
 }
 
+bool TestUpdaterLogic() {
+    std::cout << "[RUN] Testing Updater Version Comparison and JSON Parsing..." << std::endl;
+
+    // 1. 版本对比测试
+    bool hasUpdate = false;
+    TEST_ASSERT(yanlv::Updater::CompareVersions("v1.0.0", "v1.0.0", hasUpdate), "Compare same version failed");
+    TEST_ASSERT(!hasUpdate, "Same version should have no update");
+
+    TEST_ASSERT(yanlv::Updater::CompareVersions("v1.0.0", "v1.0.1", hasUpdate), "Compare patch version failed");
+    TEST_ASSERT(hasUpdate, "v1.0.1 should trigger update from v1.0.0");
+
+    TEST_ASSERT(yanlv::Updater::CompareVersions("v1.0.0", "v1.1.0", hasUpdate), "Compare minor version failed");
+    TEST_ASSERT(hasUpdate, "v1.1.0 should trigger update from v1.0.0");
+
+    TEST_ASSERT(yanlv::Updater::CompareVersions("v1.0.0", "v2.0.0", hasUpdate), "Compare major version failed");
+    TEST_ASSERT(hasUpdate, "v2.0.0 should trigger update from v1.0.0");
+
+    TEST_ASSERT(yanlv::Updater::CompareVersions("v1.2.0", "v1.1.9", hasUpdate), "Compare older version failed");
+    TEST_ASSERT(!hasUpdate, "Older version should not trigger update");
+
+    // 2. JSON 提取测试
+    std::string sampleJson = 
+        "{\"tag_name\":\"v1.0.1\",\"name\":\"言律时钟 v1.0.1 发布\",\"html_url\":\"https://github.com/test/releases/tag/v1.0.1\",\"body\":\"Bug fixes\\nand improvements\"}";
+
+    std::string tag = yanlv::Updater::ExtractJsonString(sampleJson, "tag_name");
+    TEST_ASSERT(tag == "v1.0.1", "Extract tag_name mismatch");
+
+    std::string name = yanlv::Updater::ExtractJsonString(sampleJson, "name");
+    TEST_ASSERT(name == "言律时钟 v1.0.1 发布", "Extract name mismatch");
+
+    std::string url = yanlv::Updater::ExtractJsonString(sampleJson, "html_url");
+    TEST_ASSERT(url == "https://github.com/test/releases/tag/v1.0.1", "Extract html_url mismatch");
+
+    std::string body = yanlv::Updater::ExtractJsonString(sampleJson, "body");
+    TEST_ASSERT(body == "Bug fixes\nand improvements", "Extract body mismatch");
+
+    // 3. 验证与 GitHub Releases API 的在线网络检测
+    auto liveInfo = yanlv::Updater::CheckForUpdatesSync();
+    if (liveInfo.errorMessage.empty()) {
+        std::wcout << L"  -> [在线检测] GitHub 接口联通正常，最新版本: " << liveInfo.latestVersion 
+                   << L", 标题: " << liveInfo.releaseTitle << std::endl;
+        TEST_ASSERT(!liveInfo.latestVersion.empty(), "Latest version string should not be empty");
+    } else {
+        std::wcout << L"  -> [提示] 网络离线或限流: " << liveInfo.errorMessage << std::endl;
+    }
+
+    std::cout << "[PASS] Updater Version Comparison and JSON Parsing passed!" << std::endl;
+    return true;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "   言律时钟 (Yanlv-timer) 本地核心测试   " << std::endl;
@@ -279,9 +330,10 @@ int main() {
     if (!TestHeartbeatAndCrashRecovery()) return 1;
     if (!TestTimerEngineLifecycle()) return 1;
     if (!TestConfigPersistenceAndClockPosition()) return 1;
+    if (!TestUpdaterLogic()) return 1;
 
     std::cout << "========================================" << std::endl;
-    std::cout << "   ALL TESTS PASSED SUCCESSFULLY! (5/5) " << std::endl;
+    std::cout << "   ALL TESTS PASSED SUCCESSFULLY! (6/6) " << std::endl;
     std::cout << "========================================" << std::endl;
     return 0;
 }

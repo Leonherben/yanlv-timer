@@ -103,6 +103,8 @@ private:
     HWND m_hBtnAddCat = nullptr;
     HWND m_hBtnRenameCat = nullptr;
     HWND m_hBtnSaveSettings = nullptr;
+    HWND m_hBtnCheckUpdate = nullptr;
+    HWND m_hBtnOpenDataDir = nullptr;
 
     std::vector<Category> m_cachedCategories;
     std::vector<StudyRecord> m_cachedRecords;

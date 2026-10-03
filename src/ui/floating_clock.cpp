@@ -2,6 +2,7 @@
 #include "src/ui/d2d_renderer.h"
 #include "src/core/timer_engine.h"
 #include "src/db/repository.h"
+#include "src/utils/updater.h"
 #include <windowsx.h>
 #include <cwchar>
 #include <algorithm>
@@ -18,6 +19,7 @@ enum MenuCommand {
     ID_MENU_HIDE,
     ID_MENU_MANAGEMENT,
     ID_MENU_ALWAYS_TOP,
+    ID_MENU_CHECK_UPDATE,
     ID_MENU_EXIT
 };
 } // namespace
@@ -430,6 +432,7 @@ void FloatingClock::ShowContextMenu(int screenX, int screenY) {
 
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(hMenu, MF_STRING, ID_MENU_MANAGEMENT, L"控制中心 (统计与记录)...");
+    AppendMenuW(hMenu, MF_STRING, ID_MENU_CHECK_UPDATE, L"检查更新...");
     AppendMenuW(hMenu, MF_STRING | (m_alwaysOnTop ? MF_CHECKED : MF_UNCHECKED), ID_MENU_ALWAYS_TOP, L"窗口置顶");
     AppendMenuW(hMenu, MF_STRING, ID_MENU_HIDE, L"隐藏时钟 (可在托盘唤醒)");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
@@ -456,6 +459,9 @@ void FloatingClock::ShowContextMenu(int screenX, int screenY) {
         break;
     case ID_MENU_MANAGEMENT:
         if (m_onOpenManagement) m_onOpenManagement();
+        break;
+    case ID_MENU_CHECK_UPDATE:
+        Updater::CheckForUpdatesAsync(m_hWnd, false);
         break;
     case ID_MENU_ALWAYS_TOP:
         SetAlwaysOnTop(!m_alwaysOnTop);

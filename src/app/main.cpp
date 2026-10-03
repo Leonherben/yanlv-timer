@@ -14,6 +14,7 @@
 #include "src/ui/break_fullscreen.h"
 #include "src/ui/management_window.h"
 #include "src/app/tray_icon.h"
+#include "src/utils/updater.h"
 
 namespace yanlv {
 
@@ -27,6 +28,7 @@ enum TrayMenuId {
     ID_TRAY_TOGGLE_CLOCK = 4001,
     ID_TRAY_START_STUDY,
     ID_TRAY_MANAGEMENT,
+    ID_TRAY_CHECK_UPDATE,
     ID_TRAY_EXIT
 };
 
@@ -64,6 +66,7 @@ LRESULT CALLBACK MessageWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             AppendMenuW(hMenu, MF_STRING, ID_TRAY_TOGGLE_CLOCK, clockVisible ? L"隐藏悬浮时钟" : L"显示悬浮时钟");
             AppendMenuW(hMenu, MF_STRING, ID_TRAY_START_STUDY, L"开始专注...");
             AppendMenuW(hMenu, MF_STRING, ID_TRAY_MANAGEMENT, L"控制中心 (统计与记录)...");
+            AppendMenuW(hMenu, MF_STRING, ID_TRAY_CHECK_UPDATE, L"检查更新...");
             AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
             AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"退出言律时钟");
 
@@ -84,6 +87,9 @@ LRESULT CALLBACK MessageWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
             case ID_TRAY_MANAGEMENT:
                 ManagementWindow::Instance().Show();
+                break;
+            case ID_TRAY_CHECK_UPDATE:
+                Updater::CheckForUpdatesAsync(nullptr, false);
                 break;
             case ID_TRAY_EXIT:
                 PostQuitMessage(0);

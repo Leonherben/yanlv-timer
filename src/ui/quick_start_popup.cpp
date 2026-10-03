@@ -235,8 +235,22 @@ LRESULT QuickStartPopup::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
     }
     case WM_ACTIVATE: {
         if (LOWORD(wParam) == WA_INACTIVE) {
-            // 点击外部自动收起
-            Hide();
+            HWND hGaining = reinterpret_cast<HWND>(lParam);
+            bool isInternal = false;
+            if (hGaining) {
+                if (hGaining == hWnd || IsChild(hWnd, hGaining)) {
+                    isInternal = true;
+                } else {
+                    wchar_t clsName[32] = {0};
+                    GetClassNameW(hGaining, clsName, 32);
+                    if (wcscmp(clsName, L"ComboLBox") == 0) {
+                        isInternal = true;
+                    }
+                }
+            }
+            if (!isInternal) {
+                Hide();
+            }
         }
         return 0;
     }

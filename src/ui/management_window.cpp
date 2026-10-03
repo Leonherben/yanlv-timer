@@ -13,6 +13,16 @@ namespace yanlv {
 
 namespace {
 const wchar_t* const MANAGEMENT_WINDOW_CLASS = L"YanlvManagementWindowClass";
+const wchar_t* const TAB_PANEL_CLASS = L"YanlvTabPanelClass";
+
+LRESULT CALLBACK TabPanelProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+    case WM_COMMAND:
+    case WM_NOTIFY:
+        return SendMessageW(GetParent(hWnd), uMsg, wParam, lParam);
+    }
+    return DefWindowProcW(hWnd, uMsg, wParam, lParam);
+}
 
 enum ControlId {
     ID_TAB_CONTROL = 3001,
@@ -91,9 +101,17 @@ bool ManagementWindow::Create() {
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
-    wc.lpszClassName = MANAGEMENT_WINDOW_CLASS;
-
     RegisterClassExW(&wc);
+
+    WNDCLASSEXW wcPanel{};
+    wcPanel.cbSize = sizeof(WNDCLASSEXW);
+    wcPanel.style = CS_HREDRAW | CS_VREDRAW;
+    wcPanel.lpfnWndProc = TabPanelProc;
+    wcPanel.hInstance = hInstance;
+    wcPanel.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wcPanel.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    wcPanel.lpszClassName = TAB_PANEL_CLASS;
+    RegisterClassExW(&wcPanel);
 
     m_hFont = CreateFontW(
         -13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
@@ -161,8 +179,8 @@ void ManagementWindow::CreateStatsPage(HWND hWnd) {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
 
     m_hPanelStats = CreateWindowW(
-        L"STATIC", L"",
-        WS_CHILD | WS_VISIBLE | SS_BLACKFRAME,
+        TAB_PANEL_CLASS, L"",
+        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
         20, 48, 564, 370,
         hWnd, nullptr, hInstance, nullptr
     );
@@ -220,8 +238,8 @@ void ManagementWindow::CreateRecordsPage(HWND hWnd) {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
 
     m_hPanelRecords = CreateWindowW(
-        L"STATIC", L"",
-        WS_CHILD | SS_BLACKFRAME,
+        TAB_PANEL_CLASS, L"",
+        WS_CHILD | WS_CLIPCHILDREN,
         20, 48, 564, 370,
         hWnd, nullptr, hInstance, nullptr
     );
@@ -287,8 +305,8 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
 
     m_hPanelSettings = CreateWindowW(
-        L"STATIC", L"",
-        WS_CHILD | SS_BLACKFRAME,
+        TAB_PANEL_CLASS, L"",
+        WS_CHILD | WS_CLIPCHILDREN,
         20, 48, 564, 370,
         hWnd, nullptr, hInstance, nullptr
     );
@@ -658,7 +676,13 @@ LRESULT ManagementWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
         int id = LOWORD(wParam);
         int code = HIWORD(wParam);
 
-        if (id == ID_COMBO_FILTER && code == CBN_SELCHANGE) {
+        if (id == ID_LIST_CATEGORIES && code == LBN_SELCHANGE) {
+            int sel = static_cast<int>(SendMessage(m_hListCategories, LB_GETCURSEL, 0, 0));
+            if (sel >= 0 && sel < static_cast<int>(m_cachedCategories.size())) {
+                SetWindowTextW(m_hEditNewCat, m_cachedCategories[sel].name.c_str());
+            }
+            return 0;
+        } else if (id == ID_COMBO_FILTER && code == CBN_SELCHANGE) {
             RefreshRecords();
             return 0;
         } else if (id == ID_BTN_CHANGE_CAT && code == BN_CLICKED) {

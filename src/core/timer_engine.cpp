@@ -1,4 +1,4 @@
-#include "src/core/timer_engine.h"
+﻿#include "src/core/timer_engine.h"
 #include "src/db/repository.h"
 #include <ctime>
 #include <algorithm>
@@ -14,7 +14,7 @@ TimerEngine::TimerEngine() = default;
 TimerEngine::~TimerEngine() = default;
 
 void TimerEngine::Initialize() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     // 检查并恢复上次异常退出的未关闭记录
     StudyRecord recovered;
     if (Repository::Instance().CheckAndRecoverInterruptedSession(&recovered)) {
@@ -33,7 +33,7 @@ void TimerEngine::SetState(TimerState newState) {
 }
 
 bool TimerEngine::StartStudy(int64_t categoryId, int64_t durationSeconds) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (m_state.load() != TimerState::Idle || durationSeconds <= 0) {
         return false;
     }
@@ -56,7 +56,7 @@ bool TimerEngine::StartStudy(int64_t categoryId, int64_t durationSeconds) {
 }
 
 bool TimerEngine::Pause() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (m_state.load() != TimerState::Studying) {
         return false;
     }
@@ -71,7 +71,7 @@ bool TimerEngine::Pause() {
 }
 
 bool TimerEngine::Resume() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (m_state.load() != TimerState::Paused) {
         return false;
     }
@@ -85,7 +85,7 @@ bool TimerEngine::Resume() {
 }
 
 bool TimerEngine::Abort() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     TimerState curr = m_state.load();
     if (curr != TimerState::Studying && curr != TimerState::Paused) {
         return false;
@@ -148,7 +148,7 @@ void TimerEngine::SaveSessionHeartbeat() {
 }
 
 void TimerEngine::ConfirmBreak(bool acceptBreak) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (m_state.load() != TimerState::BreakPending) {
         return;
     }
@@ -177,7 +177,7 @@ bool TimerEngine::StartBreak(int64_t breakDuration) {
 }
 
 bool TimerEngine::SkipBreak() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (m_state.load() != TimerState::Breaking) {
         return false;
     }
@@ -194,7 +194,7 @@ bool TimerEngine::SkipBreak() {
 }
 
 void TimerEngine::OnSystemSleep() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (m_state.load() == TimerState::Studying) {
         auto now = std::chrono::steady_clock::now();
         auto segmentSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - m_segmentStartTime).count();
@@ -209,7 +209,7 @@ void TimerEngine::OnSystemWake() {
 }
 
 int64_t TimerEngine::GetRemainingSeconds() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     TimerState st = m_state.load();
     if (st == TimerState::Studying) {
         auto now = std::chrono::steady_clock::now();
@@ -229,7 +229,7 @@ int64_t TimerEngine::GetRemainingSeconds() const {
 }
 
 int64_t TimerEngine::GetElapsedSeconds() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     TimerState st = m_state.load();
     if (st == TimerState::Studying) {
         auto now = std::chrono::steady_clock::now();
@@ -245,7 +245,7 @@ int64_t TimerEngine::GetElapsedSeconds() const {
 }
 
 void TimerEngine::Update() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     TimerState st = m_state.load();
     auto now = std::chrono::steady_clock::now();
 

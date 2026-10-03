@@ -168,6 +168,12 @@ bool TestTimerEngineLifecycle() {
     auto& engine = yanlv::TimerEngine::Instance();
     engine.Initialize();
 
+    // 注册状态回调，验证回调重入 GetRemainingSeconds() 绝不死锁
+    engine.SetOnStateChange([&](yanlv::TimerState oldSt, yanlv::TimerState newSt) {
+        int64_t rem = engine.GetRemainingSeconds();
+        (void)rem;
+    });
+
     TEST_ASSERT(engine.GetState() == yanlv::TimerState::Idle, "Initial state should be Idle");
 
     // 开启 10 秒倒计时

@@ -63,7 +63,7 @@ private:
     void SaveSessionHeartbeat();
     void FinalizeStudyRecord(FinishType finishType);
 
-    mutable std::mutex m_mutex;
+    mutable std::recursive_mutex m_mutex;
     std::atomic<TimerState> m_state{TimerState::Idle};
 
     int64_t m_currentCategoryId = 1;

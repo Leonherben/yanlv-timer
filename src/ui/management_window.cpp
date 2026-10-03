@@ -16,8 +16,28 @@ const wchar_t* const TAB_PANEL_CLASS = L"YanlvTabPanelClass";
 
 LRESULT CALLBACK TabPanelProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc;
+        GetClientRect(hWnd, &rc);
+        // 白色面板背景
+        HBRUSH hWhite = reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
+        FillRect(hdc, &rc, hWhite);
+        // 精细 1px Slate 浅灰边框
+        HPEN hPen = CreatePen(PS_SOLID, 1, RGB(226, 232, 240));
+        HGDIOBJ oldPen = SelectObject(hdc, hPen);
+        HGDIOBJ oldBr = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Rectangle(hdc, rc.left, rc.top, rc.right, rc.bottom);
+        SelectObject(hdc, oldPen);
+        SelectObject(hdc, oldBr);
+        DeleteObject(hPen);
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
     case WM_COMMAND:
     case WM_NOTIFY:
+    case WM_DRAWITEM:
         return SendMessageW(GetParent(hWnd), uMsg, wParam, lParam);
     }
     return DefWindowProcW(hWnd, uMsg, wParam, lParam);
@@ -95,6 +115,8 @@ ManagementWindow::~ManagementWindow() {
     if (m_hBrushCard) DeleteObject(m_hBrushCard);
     if (m_hBrushInput) DeleteObject(m_hBrushInput);
     if (m_hBrushAccent) DeleteObject(m_hBrushAccent);
+    if (m_hBrushBorder) DeleteObject(m_hBrushBorder);
+    if (m_hBrushCardSub) DeleteObject(m_hBrushCardSub);
 
     if (m_hWnd) {
         DestroyWindow(m_hWnd);
@@ -112,11 +134,13 @@ bool ManagementWindow::Create() {
 
     HINSTANCE hInstance = GetModuleHandle(nullptr);
 
-    // 现代深色主题画刷
-    m_hBrushBg = CreateSolidBrush(RGB(22, 24, 30));       // 窗口深色底
-    m_hBrushCard = CreateSolidBrush(RGB(30, 33, 42));     // 卡片/面板底
-    m_hBrushInput = CreateSolidBrush(RGB(38, 42, 54));    // 控件输入区底
-    m_hBrushAccent = CreateSolidBrush(RGB(59, 130, 246)); // 高亮蓝
+    // 极简现代浅白主题画刷
+    m_hBrushBg = CreateSolidBrush(RGB(248, 250, 252));       // Slate-50 窗口浅色底
+    m_hBrushCard = CreateSolidBrush(RGB(255, 255, 255));     // Pure White 卡片/面板底
+    m_hBrushInput = CreateSolidBrush(RGB(255, 255, 255));    // 白色输入框底
+    m_hBrushAccent = CreateSolidBrush(RGB(37, 99, 235));     // 现代极光蓝
+    m_hBrushBorder = CreateSolidBrush(RGB(226, 232, 240));   // Slate-200 边框
+    m_hBrushCardSub = CreateSolidBrush(RGB(241, 245, 249));  // Slate-100 指标副底色
 
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(WNDCLASSEXW);
@@ -192,27 +216,24 @@ void ManagementWindow::CreateModernTabs(HWND hWnd) {
 
     m_hBtnTabStats = CreateWindowW(
         L"BUTTON", L"📊 学习看板",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        16, 12, 130, 34,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        16, 12, 130, 36,
         hWnd, reinterpret_cast<HMENU>(ID_TAB_STATS), hInstance, nullptr
     );
-    SendMessage(m_hBtnTabStats, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontBold), TRUE);
 
     m_hBtnTabRecords = CreateWindowW(
         L"BUTTON", L"📋 专注记录",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        154, 12, 130, 34,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        152, 12, 130, 36,
         hWnd, reinterpret_cast<HMENU>(ID_TAB_RECORDS), hInstance, nullptr
     );
-    SendMessage(m_hBtnTabRecords, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontBold), TRUE);
 
     m_hBtnTabSettings = CreateWindowW(
         L"BUTTON", L"⚙️ 时钟与系统设置",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        292, 12, 160, 34,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        288, 12, 160, 36,
         hWnd, reinterpret_cast<HMENU>(ID_TAB_SETTINGS), hInstance, nullptr
     );
-    SendMessage(m_hBtnTabSettings, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontBold), TRUE);
 }
 
 void ManagementWindow::CreateStatsPage(HWND hWnd) {
@@ -220,7 +241,7 @@ void ManagementWindow::CreateStatsPage(HWND hWnd) {
     m_hPanelStats = CreateWindowExW(
         0, TAB_PANEL_CLASS, nullptr,
         WS_CHILD | WS_VISIBLE,
-        16, 54, 648, 470,
+        16, 56, 648, 470,
         hWnd, nullptr, hInstance, nullptr
     );
 
@@ -250,9 +271,9 @@ void ManagementWindow::CreateStatsPage(HWND hWnd) {
     );
     SendMessage(m_hListCatStats, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
     ListView_SetExtendedListViewStyle(m_hListCatStats, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
-    ListView_SetBkColor(m_hListCatStats, RGB(30, 33, 42));
-    ListView_SetTextBkColor(m_hListCatStats, RGB(30, 33, 42));
-    ListView_SetTextColor(m_hListCatStats, RGB(235, 240, 250));
+    ListView_SetBkColor(m_hListCatStats, RGB(255, 255, 255));
+    ListView_SetTextBkColor(m_hListCatStats, RGB(255, 255, 255));
+    ListView_SetTextColor(m_hListCatStats, RGB(15, 23, 42));
 
     LVCOLUMNW lvc{};
     lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
@@ -272,7 +293,7 @@ void ManagementWindow::CreateRecordsPage(HWND hWnd) {
     m_hPanelRecords = CreateWindowExW(
         0, TAB_PANEL_CLASS, nullptr,
         WS_CHILD | WS_VISIBLE,
-        16, 54, 648, 470,
+        16, 56, 648, 470,
         hWnd, nullptr, hInstance, nullptr
     );
 
@@ -295,9 +316,9 @@ void ManagementWindow::CreateRecordsPage(HWND hWnd) {
     );
     SendMessage(m_hListRecords, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
     ListView_SetExtendedListViewStyle(m_hListRecords, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
-    ListView_SetBkColor(m_hListRecords, RGB(30, 33, 42));
-    ListView_SetTextBkColor(m_hListRecords, RGB(30, 33, 42));
-    ListView_SetTextColor(m_hListRecords, RGB(235, 240, 250));
+    ListView_SetBkColor(m_hListRecords, RGB(255, 255, 255));
+    ListView_SetTextBkColor(m_hListRecords, RGB(255, 255, 255));
+    ListView_SetTextColor(m_hListRecords, RGB(15, 23, 42));
 
     LVCOLUMNW lvc{};
     lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
@@ -319,19 +340,17 @@ void ManagementWindow::CreateRecordsPage(HWND hWnd) {
 
     m_hBtnChangeCat = CreateWindowW(
         L"BUTTON", L"修改记录分类",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         380, 428, 120, 32,
         m_hPanelRecords, reinterpret_cast<HMENU>(ID_BTN_CHANGE_CAT), hInstance, nullptr
     );
-    SendMessage(m_hBtnChangeCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
     m_hBtnDeleteRecord = CreateWindowW(
         L"BUTTON", L"删除此记录",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         512, 428, 120, 32,
         m_hPanelRecords, reinterpret_cast<HMENU>(ID_BTN_DELETE_RECORD), hInstance, nullptr
     );
-    SendMessage(m_hBtnDeleteRecord, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 }
 
 void ManagementWindow::CreateSettingsPage(HWND hWnd) {
@@ -339,7 +358,7 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     m_hPanelSettings = CreateWindowExW(
         0, TAB_PANEL_CLASS, nullptr,
         WS_CHILD | WS_VISIBLE,
-        16, 54, 648, 470,
+        16, 56, 648, 470,
         hWnd, nullptr, hInstance, nullptr
     );
 
@@ -403,28 +422,28 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     SendMessageW(m_hComboFontSize, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"特大 (32pt)"));
 
     // 时间颜色
-    HWND hLblCol = CreateWindowW(L"STATIC", L"文字颜色：", WS_CHILD | WS_VISIBLE, 476, 64, 75, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    HWND hLblCol = CreateWindowW(L"STATIC", L"文字颜色：", WS_CHILD | WS_VISIBLE, 474, 64, 75, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
     SendMessage(hLblCol, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
     m_hComboTextColor = CreateWindowW(
         L"COMBOBOX", nullptr,
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-        550, 61, 80, 200,
+        542, 61, 92, 200,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_COMBO_TEXT_COLOR), hInstance, nullptr
     );
     SendMessage(m_hComboTextColor, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
-    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"纯净白"));
-    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"浅金黄"));
-    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"荧光绿"));
-    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"冰川蓝"));
-    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"晚霞粉"));
-    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"日落橙"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"曜石黑 (推荐)"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"晨曦蓝"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"翡翠绿"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"活力橙"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"优雅紫"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"极净白 (暗底)"));
 
     // 始终置顶
     m_hCheckAlwaysOnTop = CreateWindowW(
-        L"BUTTON", L"悬浮时钟始终保持在最前 (置顶显示)",
+        L"BUTTON", L"悬浮时钟始终保持在最前 (置顶显示，即使点击任务栏也不被遮挡)",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        16, 94, 280, 20,
+        16, 94, 460, 20,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_CHECK_ALWAYS_ON_TOP), hInstance, nullptr
     );
     SendMessage(m_hCheckAlwaysOnTop, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
@@ -461,18 +480,17 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     m_hEditMediaPath = CreateWindowExW(
         WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-        130, 176, 400, 24,
+        130, 176, 400, 26,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_EDIT_MEDIA_PATH), hInstance, nullptr
     );
     SendMessage(m_hEditMediaPath, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
     m_hBtnBrowseMedia = CreateWindowW(
         L"BUTTON", L"浏览...",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         540, 174, 90, 28,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_BROWSE_MEDIA), hInstance, nullptr
     );
-    SendMessage(m_hBtnBrowseMedia, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
     // 视频声音
     HWND hLblAudio = CreateWindowW(L"STATIC", L"视频休息声音：", WS_CHILD | WS_VISIBLE, 16, 208, 110, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
@@ -514,37 +532,34 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     m_hEditNewCat = CreateWindowExW(
         WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE,
-        370, 260, 260, 24,
+        370, 260, 260, 26,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_EDIT_NEW_CAT), hInstance, nullptr
     );
     SendMessage(m_hEditNewCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
     m_hBtnAddCat = CreateWindowW(
         L"BUTTON", L"添加新类别",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         370, 296, 120, 30,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_ADD_CAT), hInstance, nullptr
     );
-    SendMessage(m_hBtnAddCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
     m_hBtnRenameCat = CreateWindowW(
         L"BUTTON", L"重命名选中类别",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         500, 296, 130, 30,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_RENAME_CAT), hInstance, nullptr
     );
-    SendMessage(m_hBtnRenameCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
     // ==========================================
     // 4. 保存设置主按钮
     // ==========================================
     m_hBtnSaveSettings = CreateWindowW(
         L"BUTTON", L"★ 保存并应用所有设置",
-        WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        16, 420, 220, 36,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        16, 420, 220, 38,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_SAVE_SETTINGS), hInstance, nullptr
     );
-    SendMessage(m_hBtnSaveSettings, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontBold), TRUE);
 }
 
 void ManagementWindow::SwitchTab(int tabIndex) {
@@ -555,6 +570,9 @@ void ManagementWindow::SwitchTab(int tabIndex) {
 
     // 重新绘制顶层 Tab 按钮状态
     InvalidateRect(m_hWnd, nullptr, TRUE);
+    if (m_hBtnTabStats) InvalidateRect(m_hBtnTabStats, nullptr, TRUE);
+    if (m_hBtnTabRecords) InvalidateRect(m_hBtnTabRecords, nullptr, TRUE);
+    if (m_hBtnTabSettings) InvalidateRect(m_hBtnTabSettings, nullptr, TRUE);
 
     if (tabIndex == 0) RefreshStats();
     else if (tabIndex == 1) RefreshRecords();
@@ -683,12 +701,14 @@ void ManagementWindow::RefreshSettings() {
     SendMessage(m_hComboFontSize, CB_SETCURSEL, fontSel, 0);
 
     // 4. 文字颜色
+    const char* const colors[] = { "#0F172A", "#2563EB", "#059669", "#EA580C", "#7C3AED", "#FFFFFF" };
     int colSel = 0;
-    if (config.clockTextColor == "#FFE066") colSel = 1;
-    else if (config.clockTextColor == "#51CF66") colSel = 2;
-    else if (config.clockTextColor == "#339AF0") colSel = 3;
-    else if (config.clockTextColor == "#CC5DE8") colSel = 4;
-    else if (config.clockTextColor == "#FF922B") colSel = 5;
+    for (int i = 0; i < 6; ++i) {
+        if (config.clockTextColor == colors[i]) {
+            colSel = i;
+            break;
+        }
+    }
     SendMessage(m_hComboTextColor, CB_SETCURSEL, colSel, 0);
 
     // 5. 始终置顶
@@ -842,7 +862,7 @@ void ManagementWindow::OnSaveSettings() {
 
     // 4. 文字颜色
     int colorIdx = static_cast<int>(SendMessage(m_hComboTextColor, CB_GETCURSEL, 0, 0));
-    const char* const colors[] = { "#FFFFFF", "#FFE066", "#51CF66", "#339AF0", "#CC5DE8", "#FF922B" };
+    const char* const colors[] = { "#0F172A", "#2563EB", "#059669", "#EA580C", "#7C3AED", "#FFFFFF" };
     if (colorIdx >= 0 && colorIdx < 6) {
         config.clockTextColor = colors[colorIdx];
     }
@@ -895,21 +915,125 @@ LRESULT ManagementWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
     case WM_CTLCOLORSTATIC: {
         HDC hdc = reinterpret_cast<HDC>(wParam);
         SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, RGB(230, 235, 245));
+        SetTextColor(hdc, RGB(30, 41, 59)); // Slate-800
         return reinterpret_cast<INT_PTR>(m_hBrushCard);
     }
     case WM_CTLCOLOREDIT:
     case WM_CTLCOLORLISTBOX: {
         HDC hdc = reinterpret_cast<HDC>(wParam);
-        SetTextColor(hdc, RGB(245, 247, 250));
-        SetBkColor(hdc, RGB(38, 42, 54));
+        SetTextColor(hdc, RGB(15, 23, 42)); // Slate-900
+        SetBkColor(hdc, RGB(255, 255, 255));
         return reinterpret_cast<INT_PTR>(m_hBrushInput);
     }
     case WM_CTLCOLORBTN: {
         HDC hdc = reinterpret_cast<HDC>(wParam);
         SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, RGB(230, 235, 245));
+        SetTextColor(hdc, RGB(30, 41, 59));
         return reinterpret_cast<INT_PTR>(m_hBrushCard);
+    }
+    case WM_DRAWITEM: {
+        auto dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+        if (!dis) break;
+        int id = static_cast<int>(dis->CtlID);
+        HDC hdc = dis->hDC;
+        RECT rc = dis->rcItem;
+
+        if (id == ID_TAB_STATS || id == ID_TAB_RECORDS || id == ID_TAB_SETTINGS) {
+            bool isActive = (id == ID_TAB_STATS && m_currentTabIndex == 0) ||
+                            (id == ID_TAB_RECORDS && m_currentTabIndex == 1) ||
+                            (id == ID_TAB_SETTINGS && m_currentTabIndex == 2);
+
+            COLORREF bgCol = isActive ? RGB(255, 255, 255) : RGB(241, 245, 249);
+            COLORREF borderCol = isActive ? RGB(203, 213, 225) : RGB(226, 232, 240);
+            HBRUSH hBr = CreateSolidBrush(bgCol);
+            HPEN hPen = CreatePen(PS_SOLID, 1, borderCol);
+            HGDIOBJ oldBr = SelectObject(hdc, hBr);
+            HGDIOBJ oldPen = SelectObject(hdc, hPen);
+            RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 8, 8);
+            SelectObject(hdc, oldBr);
+            SelectObject(hdc, oldPen);
+            DeleteObject(hBr);
+            DeleteObject(hPen);
+
+            if (isActive) {
+                // 活动 Tab 底部极光蓝指示条
+                RECT rcIndicator = { rc.left + 20, rc.bottom - 3, rc.right - 20, rc.bottom - 1 };
+                HBRUSH hBrInd = CreateSolidBrush(RGB(37, 99, 235));
+                FillRect(hdc, &rcIndicator, hBrInd);
+                DeleteObject(hBrInd);
+            }
+
+            const wchar_t* title = L"";
+            if (id == ID_TAB_STATS) title = L"📊 学习看板";
+            else if (id == ID_TAB_RECORDS) title = L"📋 专注记录";
+            else if (id == ID_TAB_SETTINGS) title = L"⚙️ 时钟与系统设置";
+
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, isActive ? RGB(15, 23, 42) : RGB(100, 116, 139));
+            SelectObject(hdc, isActive ? m_hFontBold : m_hFont);
+            DrawTextW(hdc, title, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            return TRUE;
+        } else if (id == ID_BTN_SAVE_SETTINGS) {
+            // 保存设置主按钮：曜石黑底、纯白文字、圆角胶囊
+            bool isDown = (dis->itemState & ODS_SELECTED) != 0;
+            COLORREF bgCol = isDown ? RGB(30, 41, 59) : RGB(15, 23, 42);
+            HBRUSH hBr = CreateSolidBrush(bgCol);
+            HPEN hPen = CreatePen(PS_SOLID, 1, bgCol);
+            HGDIOBJ oldBr = SelectObject(hdc, hBr);
+            HGDIOBJ oldPen = SelectObject(hdc, hPen);
+            RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 8, 8);
+            SelectObject(hdc, oldBr);
+            SelectObject(hdc, oldPen);
+            DeleteObject(hBr);
+            DeleteObject(hPen);
+
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, RGB(255, 255, 255));
+            SelectObject(hdc, m_hFontBold);
+            DrawTextW(hdc, L"★ 保存并应用所有设置", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            return TRUE;
+        } else if (id == ID_BTN_CHANGE_CAT || id == ID_BTN_ADD_CAT || id == ID_BTN_RENAME_CAT || id == ID_BTN_BROWSE_MEDIA) {
+            bool isDown = (dis->itemState & ODS_SELECTED) != 0;
+            COLORREF bgCol = isDown ? RGB(241, 245, 249) : RGB(255, 255, 255);
+            COLORREF borderCol = isDown ? RGB(148, 163, 184) : RGB(226, 232, 240);
+            HBRUSH hBr = CreateSolidBrush(bgCol);
+            HPEN hPen = CreatePen(PS_SOLID, 1, borderCol);
+            HGDIOBJ oldBr = SelectObject(hdc, hBr);
+            HGDIOBJ oldPen = SelectObject(hdc, hPen);
+            RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 6, 6);
+            SelectObject(hdc, oldBr);
+            SelectObject(hdc, oldPen);
+            DeleteObject(hBr);
+            DeleteObject(hPen);
+
+            wchar_t btnText[64] = {0};
+            GetWindowTextW(dis->hwndItem, btnText, 64);
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, RGB(51, 65, 85));
+            SelectObject(hdc, m_hFont);
+            DrawTextW(hdc, btnText, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            return TRUE;
+        } else if (id == ID_BTN_DELETE_RECORD) {
+            bool isDown = (dis->itemState & ODS_SELECTED) != 0;
+            COLORREF bgCol = isDown ? RGB(254, 242, 242) : RGB(255, 255, 255);
+            COLORREF borderCol = isDown ? RGB(248, 113, 113) : RGB(254, 202, 202);
+            HBRUSH hBr = CreateSolidBrush(bgCol);
+            HPEN hPen = CreatePen(PS_SOLID, 1, borderCol);
+            HGDIOBJ oldBr = SelectObject(hdc, hBr);
+            HGDIOBJ oldPen = SelectObject(hdc, hPen);
+            RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 6, 6);
+            SelectObject(hdc, oldBr);
+            SelectObject(hdc, oldPen);
+            DeleteObject(hBr);
+            DeleteObject(hPen);
+
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, RGB(220, 38, 38));
+            SelectObject(hdc, m_hFont);
+            DrawTextW(hdc, L"删除此记录", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            return TRUE;
+        }
+        break;
     }
     case WM_COMMAND: {
         WORD id = LOWORD(wParam);

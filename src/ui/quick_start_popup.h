@@ -40,6 +40,9 @@ private:
     HWND m_hBtn60 = nullptr;
 
     HFONT m_hFont = nullptr;
+    HFONT m_hFontBold = nullptr;
+    HBRUSH m_hBrushBg = nullptr;
+    HBRUSH m_hBrushBorder = nullptr;
     std::vector<Category> m_categories;
 };
 

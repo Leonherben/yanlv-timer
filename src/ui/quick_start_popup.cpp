@@ -38,7 +38,7 @@ LRESULT CALLBACK InputBoxProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
         HFONT hFont = CreateFontW(
             -13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei"
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI"
         );
 
         CreateWindowW(L"STATIC", data->prompt, WS_CHILD | WS_VISIBLE, 18, 16, 260, 20, hWnd, nullptr, cs->hInstance, nullptr);
@@ -53,6 +53,18 @@ LRESULT CALLBACK InputBoxProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
         SetFocus(hEdit);
         return 0;
+    }
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(30, 41, 59));
+        return reinterpret_cast<INT_PTR>(GetStockObject(WHITE_BRUSH));
+    }
+    case WM_CTLCOLOREDIT: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        SetTextColor(hdc, RGB(15, 23, 42));
+        SetBkColor(hdc, RGB(255, 255, 255));
+        return reinterpret_cast<INT_PTR>(GetStockObject(WHITE_BRUSH));
     }
     case WM_COMMAND: {
         int id = LOWORD(wParam);
@@ -90,7 +102,7 @@ bool ShowQuickInputBox(HWND hParent, const wchar_t* title, const wchar_t* prompt
         wc.lpfnWndProc = InputBoxProc;
         wc.hInstance = hInstance;
         wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+        wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
         wc.lpszClassName = INPUT_BOX_CLASS;
         RegisterClassExW(&wc);
         registered = true;
@@ -154,6 +166,9 @@ QuickStartPopup::QuickStartPopup() = default;
 
 QuickStartPopup::~QuickStartPopup() {
     if (m_hFont) DeleteObject(m_hFont);
+    if (m_hFontBold) DeleteObject(m_hFontBold);
+    if (m_hBrushBg) DeleteObject(m_hBrushBg);
+    if (m_hBrushBorder) DeleteObject(m_hBrushBorder);
     if (m_hWnd) {
         DestroyWindow(m_hWnd);
         m_hWnd = nullptr;
@@ -163,13 +178,16 @@ QuickStartPopup::~QuickStartPopup() {
 bool QuickStartPopup::Create() {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
 
+    m_hBrushBg = CreateSolidBrush(RGB(255, 255, 255));
+    m_hBrushBorder = CreateSolidBrush(RGB(226, 232, 240));
+
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(WNDCLASSEXW);
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    wc.hbrBackground = m_hBrushBg;
     wc.lpszClassName = POPUP_WINDOW_CLASS;
 
     RegisterClassExW(&wc);
@@ -177,14 +195,20 @@ bool QuickStartPopup::Create() {
     m_hFont = CreateFontW(
         -13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei"
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI"
+    );
+
+    m_hFontBold = CreateFontW(
+        -13, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI"
     );
 
     m_hWnd = CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_WINDOWEDGE,
         POPUP_WINDOW_CLASS,
         L"开启专注",
-        WS_POPUP | WS_BORDER | WS_CLIPCHILDREN,
+        WS_POPUP | WS_CLIPCHILDREN,
         0, 0, 276, 195,
         nullptr, nullptr, hInstance, this
     );
@@ -201,15 +225,15 @@ bool QuickStartPopup::Create() {
     );
     m_hBtnAddCategory = CreateWindowW(
         L"BUTTON", L"+",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP,
         230, 11, 28, 26, m_hWnd, reinterpret_cast<HMENU>(ID_BTN_ADD_CATEGORY), hInstance, nullptr
     );
 
     // 时长标签与快捷按钮
     CreateWindowW(L"STATIC", L"专注时长：", WS_CHILD | WS_VISIBLE, 16, 50, 72, 20, m_hWnd, nullptr, hInstance, nullptr);
-    m_hBtn25 = CreateWindowW(L"BUTTON", L"25m", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 88, 48, 48, 26, m_hWnd, reinterpret_cast<HMENU>(ID_BTN_25), hInstance, nullptr);
-    m_hBtn45 = CreateWindowW(L"BUTTON", L"45m", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 142, 48, 48, 26, m_hWnd, reinterpret_cast<HMENU>(ID_BTN_45), hInstance, nullptr);
-    m_hBtn60 = CreateWindowW(L"BUTTON", L"60m", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 196, 48, 48, 26, m_hWnd, reinterpret_cast<HMENU>(ID_BTN_60), hInstance, nullptr);
+    m_hBtn25 = CreateWindowW(L"BUTTON", L"25m", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 88, 48, 46, 26, m_hWnd, reinterpret_cast<HMENU>(ID_BTN_25), hInstance, nullptr);
+    m_hBtn45 = CreateWindowW(L"BUTTON", L"45m", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 140, 48, 46, 26, m_hWnd, reinterpret_cast<HMENU>(ID_BTN_45), hInstance, nullptr);
+    m_hBtn60 = CreateWindowW(L"BUTTON", L"60m", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 192, 48, 46, 26, m_hWnd, reinterpret_cast<HMENU>(ID_BTN_60), hInstance, nullptr);
 
     // 自定义分钟输入
     CreateWindowW(L"STATIC", L"自定义(分)：", WS_CHILD | WS_VISIBLE, 16, 90, 72, 20, m_hWnd, nullptr, hInstance, nullptr);
@@ -219,11 +243,11 @@ bool QuickStartPopup::Create() {
         88, 88, 60, 24, m_hWnd, reinterpret_cast<HMENU>(ID_EDIT_DURATION), hInstance, nullptr
     );
 
-    // 开始按钮
+    // 开始按钮 (现代极简主按钮)
     m_hBtnStart = CreateWindowW(
         L"BUTTON", L"开始专注", 
-        WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP, 
-        16, 134, 242, 36, m_hWnd, reinterpret_cast<HMENU>(ID_BTN_START), hInstance, nullptr
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP, 
+        16, 134, 242, 38, m_hWnd, reinterpret_cast<HMENU>(ID_BTN_START), hInstance, nullptr
     );
 
     // 绑定字体
@@ -366,6 +390,102 @@ LRESULT CALLBACK QuickStartPopup::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
 
 LRESULT QuickStartPopup::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc;
+        GetClientRect(hWnd, &rc);
+        // 绘制精细极简边框
+        HPEN hPen = CreatePen(PS_SOLID, 1, RGB(203, 213, 225));
+        HGDIOBJ oldPen = SelectObject(hdc, hPen);
+        HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Rectangle(hdc, rc.left, rc.top, rc.right, rc.bottom);
+        SelectObject(hdc, oldPen);
+        SelectObject(hdc, oldBrush);
+        DeleteObject(hPen);
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(51, 65, 85));
+        return reinterpret_cast<INT_PTR>(m_hBrushBg);
+    }
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        SetTextColor(hdc, RGB(15, 23, 42));
+        SetBkColor(hdc, RGB(255, 255, 255));
+        return reinterpret_cast<INT_PTR>(m_hBrushBg);
+    }
+    case WM_DRAWITEM: {
+        auto dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+        if (!dis) break;
+        int id = static_cast<int>(dis->CtlID);
+        HDC hdc = dis->hDC;
+        RECT rc = dis->rcItem;
+        bool isDown = (dis->itemState & ODS_SELECTED) != 0;
+
+        if (id == ID_BTN_START) {
+            // 开始专注主按钮：曜石黑底、纯白文字、圆角胶囊
+            COLORREF bgCol = isDown ? RGB(30, 41, 59) : RGB(15, 23, 42);
+            HBRUSH hBr = CreateSolidBrush(bgCol);
+            HPEN hPen = CreatePen(PS_SOLID, 1, bgCol);
+            HGDIOBJ oldBr = SelectObject(hdc, hBr);
+            HGDIOBJ oldPen = SelectObject(hdc, hPen);
+            RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 8, 8);
+            SelectObject(hdc, oldBr);
+            SelectObject(hdc, oldPen);
+            DeleteObject(hBr);
+            DeleteObject(hPen);
+
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, RGB(255, 255, 255));
+            SelectObject(hdc, m_hFontBold ? m_hFontBold : m_hFont);
+            DrawTextW(hdc, L"开始专注", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            return TRUE;
+        } else if (id == ID_BTN_25 || id == ID_BTN_45 || id == ID_BTN_60) {
+            // 预设时长快捷按钮：白底、细微灰框、深灰文字
+            COLORREF bgCol = isDown ? RGB(241, 245, 249) : RGB(255, 255, 255);
+            COLORREF borderCol = isDown ? RGB(148, 163, 184) : RGB(226, 232, 240);
+            HBRUSH hBr = CreateSolidBrush(bgCol);
+            HPEN hPen = CreatePen(PS_SOLID, 1, borderCol);
+            HGDIOBJ oldBr = SelectObject(hdc, hBr);
+            HGDIOBJ oldPen = SelectObject(hdc, hPen);
+            RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 6, 6);
+            SelectObject(hdc, oldBr);
+            SelectObject(hdc, oldPen);
+            DeleteObject(hBr);
+            DeleteObject(hPen);
+
+            const wchar_t* txt = (id == ID_BTN_25) ? L"25m" : (id == ID_BTN_45 ? L"45m" : L"60m");
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, RGB(51, 65, 85));
+            SelectObject(hdc, m_hFont ? m_hFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT));
+            DrawTextW(hdc, txt, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            return TRUE;
+        } else if (id == ID_BTN_ADD_CATEGORY) {
+            // 新建分类按钮：白底微框，带蓝色加号
+            COLORREF bgCol = isDown ? RGB(241, 245, 249) : RGB(255, 255, 255);
+            HBRUSH hBr = CreateSolidBrush(bgCol);
+            HPEN hPen = CreatePen(PS_SOLID, 1, RGB(226, 232, 240));
+            HGDIOBJ oldBr = SelectObject(hdc, hBr);
+            HGDIOBJ oldPen = SelectObject(hdc, hPen);
+            RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 6, 6);
+            SelectObject(hdc, oldBr);
+            SelectObject(hdc, oldPen);
+            DeleteObject(hBr);
+            DeleteObject(hPen);
+
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, RGB(37, 99, 235));
+            SelectObject(hdc, m_hFontBold ? m_hFontBold : m_hFont);
+            DrawTextW(hdc, L"+", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            return TRUE;
+        }
+        break;
+    }
     case WM_COMMAND: {
         int id = LOWORD(wParam);
         int code = HIWORD(wParam);

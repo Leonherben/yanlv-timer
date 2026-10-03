@@ -43,12 +43,15 @@ private:
     static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
+    static constexpr UINT_PTR ID_TOPMOST_TIMER = 9001;
+
     void Render();
     void RecreateBitmapAndTarget(int width, int height);
     void ShowContextMenu(int screenX, int screenY);
+    void EnsureTopmost();
 
     HWND m_hWnd = nullptr;
-    int m_width = 172;
+    int m_width = 188;
     int m_height = 54;
     int m_posX = 120;
     int m_posY = 120;
@@ -57,7 +60,7 @@ private:
     // 个性化配置状态
     int m_opacityPercent = 85;
     int m_fontSize = 22;
-    std::string m_textColorHex = "#FFFFFF";
+    std::string m_textColorHex = "#0F172A";
     bool m_showRealTimeWhenIdle = true;
 
     // 绘制资源

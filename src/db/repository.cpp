@@ -471,11 +471,18 @@ bool Repository::LoadConfig(AppConfig& config) {
             else if (sKey == "clock_y") config.clockPosY = std::stoi(sVal);
             else if (sKey == "always_on_top") config.alwaysOnTop = (sVal == "1");
             else if (sKey == "clock_opacity") config.clockOpacityPercent = std::stoi(sVal);
-            else if (sKey == "clock_font_size") config.clockFontSize = std::stoi(sVal);
-            else if (sKey == "clock_text_color") config.clockTextColor = sVal;
+            else if (sKey == "clock_text_color") {
+                config.clockTextColor = sVal;
+                if (config.clockTextColor == "#FFFFFF" || config.clockTextColor.empty()) {
+                    config.clockTextColor = "#0F172A";
+                }
+            }
             else if (sKey == "show_real_time") config.showRealTimeWhenIdle = (sVal == "1");
         }
         sqlite3_finalize(stmt);
+    }
+    if (config.clockTextColor == "#FFFFFF" || config.clockTextColor.empty()) {
+        config.clockTextColor = "#0F172A";
     }
     return true;
 }

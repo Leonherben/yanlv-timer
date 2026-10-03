@@ -30,6 +30,9 @@ FloatingClock& FloatingClock::Instance() {
 FloatingClock::FloatingClock() = default;
 
 FloatingClock::~FloatingClock() {
+    if (m_hWnd) {
+        KillTimer(m_hWnd, ID_TOPMOST_TIMER);
+    }
     if (m_dcRenderTarget) {
         m_dcRenderTarget->Release();
         m_dcRenderTarget = nullptr;
@@ -79,10 +82,24 @@ bool FloatingClock::Create() {
 
     if (!m_hWnd) return false;
 
+    if (m_alwaysOnTop) {
+        SetWindowPos(m_hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+    SetTimer(m_hWnd, ID_TOPMOST_TIMER, 250, nullptr);
+
     RecreateBitmapAndTarget(m_width, m_height);
 
     Render();
     return true;
+}
+
+void FloatingClock::EnsureTopmost() {
+    if (m_alwaysOnTop && m_hWnd && IsWindowVisible(m_hWnd)) {
+        HWND hPrev = GetWindow(m_hWnd, GW_HWNDPREV);
+        if (hPrev != nullptr) {
+            SetWindowPos(m_hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+    }
 }
 
 void FloatingClock::RecreateBitmapAndTarget(int width, int height) {
@@ -96,7 +113,7 @@ void FloatingClock::RecreateBitmapAndTarget(int width, int height) {
             m_textFormatTime = nullptr;
         }
         m_textFormatTime = D2DRenderer::Instance().CreateTextFormat(
-            L"Consolas", static_cast<float>(m_fontSize), DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER
+            L"Segoe UI", static_cast<float>(m_fontSize), DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER
         );
         return;
     }
@@ -142,29 +159,36 @@ void FloatingClock::RecreateBitmapAndTarget(int width, int height) {
             RECT rc{0, 0, m_width, m_height};
             m_dcRenderTarget->BindDC(m_memDC, &rc);
 
-            m_dcRenderTarget->CreateSolidColorBrush(D2D1::ColorF(0.08f, 0.09f, 0.12f, 0.85f), &m_brushBg);
-            m_dcRenderTarget->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.18f), &m_brushBorder);
-            m_dcRenderTarget->CreateSolidColorBrush(D2D1::ColorF(0.96f, 0.96f, 0.98f, 1.0f), &m_brushText);
-            m_dcRenderTarget->CreateSolidColorBrush(D2D1::ColorF(0.30f, 0.82f, 0.88f, 1.0f), &m_brushAccent);
+            // 极简白底、精细浅灰轮廓、高对比度曜石黑文字、极光蓝强调色
+            m_dcRenderTarget->CreateSolidColorBrush(D2D1::ColorF(0.99f, 0.99f, 1.0f, 0.90f), &m_brushBg);
+            m_dcRenderTarget->CreateSolidColorBrush(D2D1::ColorF(0.80f, 0.83f, 0.88f, 0.85f), &m_brushBorder);
+            m_dcRenderTarget->CreateSolidColorBrush(D2D1::ColorF(0.06f, 0.09f, 0.16f, 1.0f), &m_brushText);
+            m_dcRenderTarget->CreateSolidColorBrush(D2D1::ColorF(0.14f, 0.39f, 0.92f, 1.0f), &m_brushAccent);
 
             m_textFormatTime = D2DRenderer::Instance().CreateTextFormat(
-                L"Consolas", static_cast<float>(m_fontSize), DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER
+                L"Segoe UI", static_cast<float>(m_fontSize), DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER
             );
-            float statusPt = m_fontSize >= 26 ? 11.0f : 10.0f;
+            float statusPt = m_fontSize >= 26 ? 11.5f : 10.5f;
             m_textFormatStatus = D2DRenderer::Instance().CreateTextFormat(
-                L"Microsoft YaHei", statusPt, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER
+                L"Microsoft YaHei UI", statusPt, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER
             );
         }
     }
 
     if (m_hWnd) {
-        SetWindowPos(m_hWnd, nullptr, 0, 0, m_width, m_height, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(
+            m_hWnd,
+            m_alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST,
+            0, 0, m_width, m_height,
+            SWP_NOMOVE | SWP_NOACTIVATE
+        );
     }
 }
 
 void FloatingClock::Show() {
     if (m_hWnd) {
         ShowWindow(m_hWnd, SW_SHOWNOACTIVATE);
+        EnsureTopmost();
         Render();
     }
 }
@@ -191,7 +215,12 @@ void FloatingClock::SetPosition(int x, int y) {
     m_posX = x;
     m_posY = y;
     if (m_hWnd) {
-        SetWindowPos(m_hWnd, nullptr, m_posX, m_posY, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(
+            m_hWnd,
+            m_alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST,
+            m_posX, m_posY, 0, 0,
+            SWP_NOSIZE | SWP_NOACTIVATE
+        );
         Render();
     }
 }
@@ -216,12 +245,12 @@ void FloatingClock::SetAlwaysOnTop(bool onTop) {
 namespace {
 D2D1_COLOR_F HexToD2DColor(const std::string& hex) {
     if (hex.size() >= 7 && hex[0] == '#') {
-        unsigned int r = 255, g = 255, b = 255;
+        unsigned int r = 15, g = 23, b = 42;
         if (sscanf_s(hex.c_str() + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
             return D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 1.0f);
         }
     }
-    return D2D1::ColorF(0.96f, 0.96f, 0.98f, 1.0f);
+    return D2D1::ColorF(0.06f, 0.09f, 0.16f, 1.0f); // 极简曜石黑 #0F172A
 }
 } // namespace
 
@@ -237,7 +266,7 @@ void FloatingClock::UpdateDisplay(int64_t remainingSeconds, TimerState state) {
         swprintf_s(buf, L"%02d:%02d:%02d", localTm.tm_hour, localTm.tm_min, localTm.tm_sec);
         m_timeString = buf;
         m_statusString = L"时钟";
-        if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.30f, 0.82f, 0.88f, 1.0f));
+        if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.14f, 0.39f, 0.92f, 1.0f)); // #2563EB
     } else {
         int64_t hrs = remainingSeconds / 3600;
         int64_t mins = (remainingSeconds % 3600) / 60;
@@ -254,27 +283,28 @@ void FloatingClock::UpdateDisplay(int64_t remainingSeconds, TimerState state) {
         switch (state) {
         case TimerState::Idle:
             m_statusString = L"待开始";
-            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.30f, 0.82f, 0.88f, 1.0f));
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.23f, 0.51f, 0.96f, 1.0f)); // #3B82F6
             break;
         case TimerState::Studying:
             m_statusString = L"专注中";
-            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.26f, 0.65f, 0.96f, 1.0f));
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.14f, 0.39f, 0.92f, 1.0f)); // #2563EB
             break;
         case TimerState::Paused:
             m_statusString = L"已暂停";
-            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(1.0f, 0.65f, 0.15f, 1.0f));
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.92f, 0.55f, 0.10f, 1.0f)); // #EA580C
             break;
         case TimerState::BreakPending:
             m_statusString = L"待休息";
-            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.40f, 0.80f, 0.40f, 1.0f));
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.09f, 0.64f, 0.29f, 1.0f));
             break;
         case TimerState::Breaking:
             m_statusString = L"休息中";
-            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.35f, 0.85f, 0.45f, 1.0f));
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.09f, 0.64f, 0.29f, 1.0f)); // #16A34A
             break;
         }
     }
 
+    EnsureTopmost();
     Render();
 }
 
@@ -287,28 +317,31 @@ void FloatingClock::Render() {
     m_dcRenderTarget->BeginDraw();
     m_dcRenderTarget->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
 
-    // 绘制圆角胶囊背景
+    // 绘制圆角胶囊背景 (极简现代白色质感胶囊)
+    float cornerR = static_cast<float>(m_height) / 2.0f - 2.0f;
     D2D1_ROUNDED_RECT rrect = D2D1::RoundedRect(
         D2D1::RectF(2.0f, 2.0f, static_cast<float>(m_width) - 2.0f, static_cast<float>(m_height) - 2.0f),
-        16.0f, 16.0f
+        cornerR, cornerR
     );
 
     float bgAlpha = static_cast<float>(m_opacityPercent) / 100.0f;
     if (m_opacityPercent > 0) {
-        m_brushBg->SetColor(D2D1::ColorF(0.08f, 0.09f, 0.12f, bgAlpha));
-        m_brushBorder->SetColor(D2D1::ColorF(1.0f, 1.0f, 1.0f, (std::min)(0.25f, bgAlpha * 0.28f)));
+        // 纯净白底磨砂胶囊
+        m_brushBg->SetColor(D2D1::ColorF(0.99f, 0.99f, 1.0f, bgAlpha));
+        // 精细边缘 Slate 轮廓
+        m_brushBorder->SetColor(D2D1::ColorF(0.80f, 0.83f, 0.88f, (std::min)(0.88f, bgAlpha * 0.85f)));
         m_dcRenderTarget->FillRoundedRectangle(rrect, m_brushBg);
         m_dcRenderTarget->DrawRoundedRectangle(rrect, m_brushBorder, 1.2f);
     }
 
-    // 绘制左侧状态指示点
-    float dotX = 16.0f;
+    // 绘制左侧状态指示点 (圆润呼吸指示点)
+    float dotX = 18.0f;
     float dotY = static_cast<float>(m_height) / 2.0f;
-    m_dcRenderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(dotX, dotY), 4.5f, 4.5f), m_brushAccent);
+    m_dcRenderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(dotX, dotY), 4.2f, 4.2f), m_brushAccent);
 
     // 绘制状态文字 (点右侧微标)
     float statusW = 38.0f;
-    D2D1_RECT_F statusRect = D2D1::RectF(dotX + 7.0f, 6.0f, dotX + 7.0f + statusW, static_cast<float>(m_height) - 6.0f);
+    D2D1_RECT_F statusRect = D2D1::RectF(dotX + 6.0f, 4.0f, dotX + 6.0f + statusW, static_cast<float>(m_height) - 4.0f);
     m_dcRenderTarget->DrawText(
         m_statusString.c_str(),
         static_cast<UINT32>(m_statusString.size()),
@@ -317,11 +350,25 @@ void FloatingClock::Render() {
         m_brushAccent
     );
 
-    // 绘制时间文本 (居右侧主体区域)
+    // 绘制精致浅色竖向分隔线
+    float sepX = dotX + 6.0f + statusW + 6.0f;
+    ID2D1SolidColorBrush* dividerBrush = nullptr;
+    m_dcRenderTarget->CreateSolidColorBrush(D2D1::ColorF(0.85f, 0.88f, 0.92f, (std::min)(0.80f, bgAlpha * 0.80f)), &dividerBrush);
+    if (dividerBrush) {
+        m_dcRenderTarget->DrawLine(
+            D2D1::Point2F(sepX, 15.0f),
+            D2D1::Point2F(sepX, static_cast<float>(m_height) - 15.0f),
+            dividerBrush,
+            1.0f
+        );
+        dividerBrush->Release();
+    }
+
+    // 绘制时间文本 (居右侧高对比度数字)
     if (m_brushText) {
         m_brushText->SetColor(HexToD2DColor(m_textColorHex));
     }
-    D2D1_RECT_F timeRect = D2D1::RectF(dotX + 6.0f + statusW, 2.0f, static_cast<float>(m_width) - 6.0f, static_cast<float>(m_height) - 2.0f);
+    D2D1_RECT_F timeRect = D2D1::RectF(sepX + 4.0f, 2.0f, static_cast<float>(m_width) - 8.0f, static_cast<float>(m_height) - 2.0f);
     m_dcRenderTarget->DrawText(
         m_timeString.c_str(),
         static_cast<UINT32>(m_timeString.size()),
@@ -348,15 +395,18 @@ void FloatingClock::ApplyConfig(const AppConfig& config) {
     m_opacityPercent = config.clockOpacityPercent;
     m_fontSize = config.clockFontSize;
     m_textColorHex = config.clockTextColor;
+    if (m_textColorHex.empty() || m_textColorHex == "#FFFFFF") {
+        m_textColorHex = "#0F172A"; // 极简白主题下默认高对比曜石黑
+    }
     m_showRealTimeWhenIdle = config.showRealTimeWhenIdle;
     SetAlwaysOnTop(config.alwaysOnTop);
 
-    int targetW = 172;
+    int targetW = 188;
     int targetH = 54;
-    if (m_fontSize == 18) { targetW = 154; targetH = 48; }
-    else if (m_fontSize == 22) { targetW = 172; targetH = 54; }
-    else if (m_fontSize == 26) { targetW = 196; targetH = 60; }
-    else if (m_fontSize == 32) { targetW = 226; targetH = 68; }
+    if (m_fontSize == 18) { targetW = 168; targetH = 48; }
+    else if (m_fontSize == 22) { targetW = 188; targetH = 54; }
+    else if (m_fontSize == 26) { targetW = 214; targetH = 60; }
+    else if (m_fontSize == 32) { targetW = 248; targetH = 68; }
 
     RecreateBitmapAndTarget(targetW, targetH);
     UpdateDisplay(m_currentSeconds, m_currentState);
@@ -437,6 +487,27 @@ LRESULT CALLBACK FloatingClock::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 
 LRESULT FloatingClock::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
+    case WM_TIMER: {
+        if (wParam == ID_TOPMOST_TIMER) {
+            EnsureTopmost();
+        }
+        return 0;
+    }
+    case WM_WINDOWPOSCHANGING: {
+        if (m_alwaysOnTop) {
+            auto wp = reinterpret_cast<WINDOWPOS*>(lParam);
+            wp->hwndInsertAfter = HWND_TOPMOST;
+            wp->flags &= ~SWP_NOZORDER;
+        }
+        break;
+    }
+    case WM_ACTIVATE: {
+        EnsureTopmost();
+        break;
+    }
+    case WM_MOUSEACTIVATE: {
+        return MA_NOACTIVATE;
+    }
     case WM_LBUTTONDOWN: {
         m_mouseDownPos.x = GET_X_LPARAM(lParam);
         m_mouseDownPos.y = GET_Y_LPARAM(lParam);
@@ -450,10 +521,20 @@ LRESULT FloatingClock::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
             int curY = GET_Y_LPARAM(lParam);
             int dx = curX - m_mouseDownPos.x;
             int dy = curY - m_mouseDownPos.y;
-            if (abs(dx) > 3 || abs(dy) > 3) {
+            if (abs(dx) > 2 || abs(dy) > 2) {
                 m_isDragging = true;
                 m_posX += dx;
                 m_posY += dy;
+
+                // 限制在当前监视器屏幕边界内，但允许贴合覆盖任务栏区域
+                HMONITOR hMon = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+                MONITORINFO mi{};
+                mi.cbSize = sizeof(MONITORINFO);
+                if (GetMonitorInfoW(hMon, &mi)) {
+                    m_posX = (std::max)(static_cast<int>(mi.rcMonitor.left), (std::min)(static_cast<int>(mi.rcMonitor.right - m_width), m_posX));
+                    m_posY = (std::max)(static_cast<int>(mi.rcMonitor.top), (std::min)(static_cast<int>(mi.rcMonitor.bottom - m_height), m_posY));
+                }
+
                 SetPosition(m_posX, m_posY);
             }
         }

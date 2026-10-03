@@ -90,7 +90,7 @@ struct AppConfig {
     bool alwaysOnTop = true;
     int clockOpacityPercent = 85;          // 背景透明度 (0 - 100)
     int clockFontSize = 22;                // 时间字号 (18, 22, 26, 32)
-    std::string clockTextColor = "#FFFFFF";// 时间文字颜色十六进制代码
+    std::string clockTextColor = "#0F172A";// 时间文字颜色十六进制代码 (极简曜石黑)
     bool showRealTimeWhenIdle = true;      // 待机时默认显示系统实际时间 (北京时间)
 };
 

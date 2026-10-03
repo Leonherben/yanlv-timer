@@ -56,6 +56,8 @@ private:
     HBRUSH m_hBrushCard = nullptr;
     HBRUSH m_hBrushInput = nullptr;
     HBRUSH m_hBrushAccent = nullptr;
+    HBRUSH m_hBrushBorder = nullptr;
+    HBRUSH m_hBrushCardSub = nullptr;
 
     // 现代顶部切换标签
     HWND m_hBtnTabStats = nullptr;

@@ -10,6 +10,22 @@ namespace yanlv {
 
 namespace {
 const wchar_t* const BREAK_WINDOW_CLASS = L"YanlvBreakFullscreenClass";
+constexpr UINT WM_GRAPHNOTIFY = WM_APP + 201;
+constexpr UINT IDC_OVERLAY_SKIP = 6001;
+constexpr UINT IDC_OVERLAY_TIME = 6002;
+
+bool IsVideoFile(const std::wstring& path) {
+    if (path.empty()) return false;
+    size_t dotPos = path.find_last_of(L'.');
+    if (dotPos == std::wstring::npos) return false;
+    std::wstring ext = path.substr(dotPos);
+    for (auto& c : ext) {
+        c = static_cast<wchar_t>(::towlower(c));
+    }
+    return (ext == L".mp4" || ext == L".wmv" || ext == L".avi" ||
+            ext == L".mkv" || ext == L".mov" || ext == L".m4v" ||
+            ext == L".webm" || ext == L".flv" || ext == L".mpg" || ext == L".mpeg");
+}
 } // namespace
 
 BreakFullscreen& BreakFullscreen::Instance() {
@@ -21,13 +37,17 @@ BreakFullscreen::BreakFullscreen() = default;
 
 BreakFullscreen::~BreakFullscreen() {
     ReleaseMediaResources();
+    if (m_hOverlayFont) {
+        DeleteObject(m_hOverlayFont);
+        m_hOverlayFont = nullptr;
+    }
     if (m_hWnd) {
         DestroyWindow(m_hWnd);
         m_hWnd = nullptr;
     }
 }
 
-bool BreakFullscreen::ShowBreak(const std::wstring& mediaPath) {
+bool BreakFullscreen::ShowBreak(const std::wstring& mediaPath, bool videoMuted) {
     if (!m_hWnd) {
         if (!CreateFullscreenWindow()) {
             return false;
@@ -50,7 +70,7 @@ bool BreakFullscreen::ShowBreak(const std::wstring& mediaPath) {
         SWP_SHOWWINDOW
     );
 
-    // 计算底部按钮位置
+    // 计算底部按钮位置 (图片模式下使用)
     m_skipBtnRect = D2D1::RectF(
         (m_screenWidth - 110.0f) / 2.0f,
         static_cast<float>(m_screenHeight) - 64.0f,
@@ -58,10 +78,19 @@ bool BreakFullscreen::ShowBreak(const std::wstring& mediaPath) {
         static_cast<float>(m_screenHeight) - 28.0f
     );
 
-    // 释放旧资源并加载新媒体
+    // 释放旧资源
     ReleaseMediaResources();
 
-    // 重新创建 Direct2D 渲染资源
+    // 如果指定了媒体路径且是视频文件，尝试使用 DirectShow 播放视频
+    if (!mediaPath.empty() && IsVideoFile(mediaPath)) {
+        if (PlayVideoFile(mediaPath, videoMuted)) {
+            SetForegroundWindow(m_hWnd);
+            SetFocus(m_hWnd);
+            return true;
+        }
+    }
+
+    // 视频未播放或非视频，使用 Direct2D 静态图片渲染模式
     if (D2DRenderer::Instance().Initialize()) {
         D2D1_SIZE_U size = D2D1::SizeU(m_screenWidth, m_screenHeight);
         D2DRenderer::Instance().GetD2DFactory()->CreateHwndRenderTarget(
@@ -85,8 +114,8 @@ bool BreakFullscreen::ShowBreak(const std::wstring& mediaPath) {
         }
     }
 
-    // 尝试加载图片
-    if (!mediaPath.empty()) {
+    // 尝试加载静态图片
+    if (!mediaPath.empty() && !IsVideoFile(mediaPath)) {
         LoadImageFile(mediaPath);
     }
     if (!m_loadedBitmap) {
@@ -98,6 +127,152 @@ bool BreakFullscreen::ShowBreak(const std::wstring& mediaPath) {
     SetFocus(m_hWnd);
     Render();
     return true;
+}
+
+bool BreakFullscreen::PlayVideoFile(const std::wstring& filePath, bool isMuted) {
+    HRESULT hr = CoCreateInstance(
+        CLSID_FilterGraph, nullptr, CLSCTX_INPROC_SERVER,
+        IID_IGraphBuilder, reinterpret_cast<void**>(&m_graphBuilder)
+    );
+    if (FAILED(hr) || !m_graphBuilder) {
+        return false;
+    }
+
+    hr = m_graphBuilder->QueryInterface(IID_IMediaControl, reinterpret_cast<void**>(&m_mediaControl));
+    if (FAILED(hr)) {
+        ReleaseMediaResources();
+        return false;
+    }
+
+    m_graphBuilder->QueryInterface(IID_IVideoWindow, reinterpret_cast<void**>(&m_videoWindow));
+    m_graphBuilder->QueryInterface(IID_IBasicAudio, reinterpret_cast<void**>(&m_basicAudio));
+    m_graphBuilder->QueryInterface(IID_IMediaSeeking, reinterpret_cast<void**>(&m_mediaSeeking));
+    m_graphBuilder->QueryInterface(IID_IMediaEventEx, reinterpret_cast<void**>(&m_mediaEvent));
+
+    // 使用 DirectShow 自动构建解码滤镜链
+    hr = m_graphBuilder->RenderFile(filePath.c_str(), nullptr);
+    if (FAILED(hr)) {
+        ReleaseMediaResources();
+        return false;
+    }
+
+    // 配置视频显示窗口
+    if (m_videoWindow) {
+        m_videoWindow->put_Owner(reinterpret_cast<OAHWND>(m_hWnd));
+        m_videoWindow->put_WindowStyle(WS_CHILD | WS_CLIPSIBLINGS);
+
+        // 计算等比自适应居中尺寸
+        long vidWidth = 0, vidHeight = 0;
+        IBasicVideo* pBasicVideo = nullptr;
+        if (SUCCEEDED(m_graphBuilder->QueryInterface(IID_IBasicVideo, reinterpret_cast<void**>(&pBasicVideo)))) {
+            pBasicVideo->GetVideoSize(&vidWidth, &vidHeight);
+            pBasicVideo->Release();
+        }
+
+        long vx = 0, vy = 0, vw = m_screenWidth, vh = m_screenHeight;
+        if (vidWidth > 0 && vidHeight > 0) {
+            double aspect = static_cast<double>(vidWidth) / static_cast<double>(vidHeight);
+            double screenAspect = static_cast<double>(m_screenWidth) / static_cast<double>(m_screenHeight);
+            if (screenAspect > aspect) {
+                vh = m_screenHeight;
+                vw = static_cast<long>(vh * aspect);
+                vx = (m_screenWidth - vw) / 2;
+                vy = 0;
+            } else {
+                vw = m_screenWidth;
+                vh = static_cast<long>(vw / aspect);
+                vx = 0;
+                vy = (m_screenHeight - vh) / 2;
+            }
+        }
+        m_videoWindow->SetWindowPosition(vx, vy, vw, vh);
+
+        // 转发按键与鼠标消息至宿主窗口
+        m_videoWindow->put_MessageDrain(reinterpret_cast<OAHWND>(m_hWnd));
+        m_videoWindow->put_Visible(OATRUE);
+    }
+
+    // 设置声音：0 为原声音量，-10000 为完全静音
+    if (m_basicAudio) {
+        m_basicAudio->put_Volume(isMuted ? -10000 : 0);
+    }
+
+    // 注册循环播放事件
+    if (m_mediaEvent) {
+        m_mediaEvent->SetNotifyWindow(reinterpret_cast<OAHWND>(m_hWnd), WM_GRAPHNOTIFY, 0);
+    }
+
+    hr = m_mediaControl->Run();
+    if (FAILED(hr)) {
+        ReleaseMediaResources();
+        return false;
+    }
+
+    m_isVideoPlaying = true;
+    SetupVideoOverlay();
+    return true;
+}
+
+void BreakFullscreen::SetupVideoOverlay() {
+    HINSTANCE hInstance = GetModuleHandle(nullptr);
+
+    if (!m_hOverlayFont) {
+        m_hOverlayFont = CreateFontW(
+            -16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Consolas"
+        );
+    }
+
+    // 右上角倒计时药丸
+    int pillW = 100;
+    int pillH = 34;
+    int pillX = m_screenWidth - pillW - 28;
+    int pillY = 24;
+
+    if (!m_hStaticTimeOverlay) {
+        m_hStaticTimeOverlay = CreateWindowExW(
+            WS_EX_TOPMOST, L"STATIC", m_countdownText.c_str(),
+            WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE | WS_CLIPSIBLINGS,
+            pillX, pillY, pillW, pillH,
+            m_hWnd, reinterpret_cast<HMENU>(IDC_OVERLAY_TIME), hInstance, nullptr
+        );
+        if (m_hOverlayFont) {
+            SendMessage(m_hStaticTimeOverlay, WM_SETFONT, reinterpret_cast<WPARAM>(m_hOverlayFont), TRUE);
+        }
+    } else {
+        SetWindowPos(m_hStaticTimeOverlay, HWND_TOP, pillX, pillY, pillW, pillH, SWP_SHOWWINDOW);
+        SetWindowTextW(m_hStaticTimeOverlay, m_countdownText.c_str());
+    }
+
+    // 底部结束休息按钮
+    int btnW = 120;
+    int btnH = 38;
+    int btnX = (m_screenWidth - btnW) / 2;
+    int btnY = m_screenHeight - 64;
+
+    if (!m_hBtnSkipOverlay) {
+        m_hBtnSkipOverlay = CreateWindowExW(
+            WS_EX_TOPMOST, L"BUTTON", L"结束休息",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_CLIPSIBLINGS,
+            btnX, btnY, btnW, btnH,
+            m_hWnd, reinterpret_cast<HMENU>(IDC_OVERLAY_SKIP), hInstance, nullptr
+        );
+        HFONT hBtnFont = CreateFontW(
+            -14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei"
+        );
+        if (hBtnFont) {
+            SendMessage(m_hBtnSkipOverlay, WM_SETFONT, reinterpret_cast<WPARAM>(hBtnFont), TRUE);
+        }
+    } else {
+        SetWindowPos(m_hBtnSkipOverlay, HWND_TOP, btnX, btnY, btnW, btnH, SWP_SHOWWINDOW);
+    }
+
+    // 保证悬浮控件置于视频窗口上方
+    SetWindowPos(m_hStaticTimeOverlay, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    SetWindowPos(m_hBtnSkipOverlay, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 }
 
 bool BreakFullscreen::LoadImageFile(const std::wstring& filePath) {
@@ -136,6 +311,46 @@ bool BreakFullscreen::LoadImageFile(const std::wstring& filePath) {
 }
 
 void BreakFullscreen::ReleaseMediaResources() {
+    if (m_mediaEvent) {
+        m_mediaEvent->SetNotifyWindow(reinterpret_cast<OAHWND>(nullptr), 0, 0);
+        m_mediaEvent->Release();
+        m_mediaEvent = nullptr;
+    }
+    if (m_mediaControl) {
+        m_mediaControl->Stop();
+        m_mediaControl->Release();
+        m_mediaControl = nullptr;
+    }
+    if (m_videoWindow) {
+        m_videoWindow->put_Visible(OAFALSE);
+        m_videoWindow->put_Owner(reinterpret_cast<OAHWND>(nullptr));
+        m_videoWindow->put_MessageDrain(reinterpret_cast<OAHWND>(nullptr));
+        m_videoWindow->Release();
+        m_videoWindow = nullptr;
+    }
+    if (m_basicAudio) {
+        m_basicAudio->Release();
+        m_basicAudio = nullptr;
+    }
+    if (m_mediaSeeking) {
+        m_mediaSeeking->Release();
+        m_mediaSeeking = nullptr;
+    }
+    if (m_graphBuilder) {
+        m_graphBuilder->Release();
+        m_graphBuilder = nullptr;
+    }
+    m_isVideoPlaying = false;
+
+    if (m_hBtnSkipOverlay) {
+        DestroyWindow(m_hBtnSkipOverlay);
+        m_hBtnSkipOverlay = nullptr;
+    }
+    if (m_hStaticTimeOverlay) {
+        DestroyWindow(m_hStaticTimeOverlay);
+        m_hStaticTimeOverlay = nullptr;
+    }
+
     if (m_loadedBitmap) {
         m_loadedBitmap->Release();
         m_loadedBitmap = nullptr;
@@ -166,13 +381,15 @@ void BreakFullscreen::UpdateCountdown(int64_t remainingSeconds) {
     swprintf_s(buf, L"%02lld:%02lld", mins, secs);
     m_countdownText = buf;
 
-    if (IsActive()) {
+    if (m_isVideoPlaying && m_hStaticTimeOverlay) {
+        SetWindowTextW(m_hStaticTimeOverlay, m_countdownText.c_str());
+    } else if (IsActive()) {
         Render();
     }
 }
 
 void BreakFullscreen::Render() {
-    if (!m_renderTarget || !IsActive()) return;
+    if (!m_renderTarget || !IsActive() || m_isVideoPlaying) return;
 
     m_renderTarget->BeginDraw();
     m_renderTarget->Clear(D2D1::ColorF(0.04f, 0.04f, 0.06f, 1.0f));
@@ -290,6 +507,46 @@ LRESULT CALLBACK BreakFullscreen::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
 
 LRESULT BreakFullscreen::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
+    case WM_COMMAND: {
+        WORD id = LOWORD(wParam);
+        if (id == IDC_OVERLAY_SKIP) {
+            TimerEngine::Instance().SkipBreak();
+            CloseBreak();
+            FloatingClock::Instance().Show();
+            return 0;
+        }
+        break;
+    }
+    case WM_GRAPHNOTIFY: {
+        if (m_mediaEvent) {
+            long evCode;
+            LONG_PTR p1, p2;
+            while (SUCCEEDED(m_mediaEvent->GetEvent(&evCode, &p1, &p2, 0))) {
+                m_mediaEvent->FreeEventParams(evCode, p1, p2);
+                if (evCode == EC_COMPLETE) {
+                    if (m_mediaSeeking) {
+                        LONGLONG startPos = 0;
+                        m_mediaSeeking->SetPositions(
+                            &startPos, AM_SEEKING_AbsolutePositioning,
+                            nullptr, AM_SEEKING_NoPositioning
+                        );
+                    }
+                }
+            }
+        }
+        return 0;
+    }
+    case WM_CTLCOLORSTATIC: {
+        HWND hCtrl = reinterpret_cast<HWND>(lParam);
+        if (hCtrl == m_hStaticTimeOverlay) {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            SetTextColor(hdc, RGB(245, 245, 250));
+            SetBkColor(hdc, RGB(20, 24, 32));
+            static HBRUSH hOverlayBg = CreateSolidBrush(RGB(20, 24, 32));
+            return reinterpret_cast<INT_PTR>(hOverlayBg);
+        }
+        break;
+    }
     case WM_KEYDOWN: {
         if (wParam == VK_ESCAPE) {
             // Esc 退出全屏，继续后台休息并在悬浮时钟显示
@@ -300,6 +557,8 @@ LRESULT BreakFullscreen::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
         break;
     }
     case WM_MOUSEMOVE: {
+        if (m_isVideoPlaying) return 0;
+
         float mx = static_cast<float>(GET_X_LPARAM(lParam));
         float my = static_cast<float>(GET_Y_LPARAM(lParam));
 
@@ -326,6 +585,8 @@ LRESULT BreakFullscreen::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
         return 0;
     }
     case WM_LBUTTONDOWN: {
+        if (m_isVideoPlaying) return 0;
+
         float mx = static_cast<float>(GET_X_LPARAM(lParam));
         float my = static_cast<float>(GET_Y_LPARAM(lParam));
 
@@ -342,7 +603,9 @@ LRESULT BreakFullscreen::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
     case WM_PAINT: {
         PAINTSTRUCT ps;
         BeginPaint(hWnd, &ps);
-        Render();
+        if (!m_isVideoPlaying) {
+            Render();
+        }
         EndPaint(hWnd, &ps);
         return 0;
     }

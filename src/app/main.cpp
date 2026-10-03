@@ -204,7 +204,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     // 10. 绑定计时器事件响应
     auto& engine = yanlv::TimerEngine::Instance();
 
-    engine.SetOnTick([&](int64_t remaining, int64_t elapsed) {
+    engine.SetOnTick([&](int64_t remaining, int64_t /*elapsed*/) {
         yanlv::TimerState st = engine.GetState();
         clock.UpdateDisplay(remaining, st);
 
@@ -228,7 +228,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         yanlv::TrayIcon::Instance().UpdateTooltip(tipBuf);
     });
 
-    engine.SetOnStateChange([&](yanlv::TimerState oldState, yanlv::TimerState newState) {
+    engine.SetOnStateChange([&](yanlv::TimerState /*oldState*/, yanlv::TimerState newState) {
         int64_t rem = engine.GetRemainingSeconds();
         clock.UpdateDisplay(rem, newState);
 
@@ -236,7 +236,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
             yanlv::AppConfig curConfig;
             yanlv::Repository::Instance().LoadConfig(curConfig);
             clock.Hide();
-            yanlv::BreakFullscreen::Instance().ShowBreak(curConfig.customMediaPath);
+            yanlv::BreakFullscreen::Instance().ShowBreak(curConfig.customMediaPath, curConfig.videoMuted);
         }
     });
 

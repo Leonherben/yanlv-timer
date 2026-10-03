@@ -4,13 +4,11 @@
 #include <windows.h>
 #include <unknwn.h>
 #include <cstdint>
+#include <dshow.h>
 #include <d2d1.h>
 #include <d2d1helper.h>
 #include <dwrite.h>
 #include <wincodec.h>
-#include <mfapi.h>
-#include <mfidl.h>
-#include <mfmediaengine.h>
 #include <string>
 
 namespace yanlv {
@@ -19,7 +17,7 @@ class BreakFullscreen {
 public:
     static BreakFullscreen& Instance();
 
-    bool ShowBreak(const std::wstring& mediaPath = L"");
+    bool ShowBreak(const std::wstring& mediaPath = L"", bool videoMuted = true);
     void CloseBreak();
     bool IsActive() const { return m_hWnd != nullptr && IsWindowVisible(m_hWnd); }
 
@@ -38,13 +36,14 @@ private:
     void Render();
     void ReleaseMediaResources();
     bool LoadImageFile(const std::wstring& filePath);
-    bool PlayVideoFile(const std::wstring& filePath);
+    bool PlayVideoFile(const std::wstring& filePath, bool isMuted);
+    void SetupVideoOverlay();
 
     HWND m_hWnd = nullptr;
     int m_screenWidth = 1920;
     int m_screenHeight = 1080;
 
-    // Direct2D 渲染资源 (仅在全屏期间持有，退出立即释放)
+    // Direct2D 渲染资源 (静态图片背景时使用)
     ID2D1HwndRenderTarget* m_renderTarget = nullptr;
     ID2D1Bitmap* m_loadedBitmap = nullptr;
     ID2D1SolidColorBrush* m_brushBlack = nullptr;
@@ -58,9 +57,19 @@ private:
     bool m_isHoveringSkip = false;
     D2D1_RECT_F m_skipBtnRect{};
 
-    // Media Foundation
-    IMFMediaEngine* m_mediaEngine = nullptr;
-    bool m_isVideo = false;
+    // DirectShow 视频播放
+    IGraphBuilder* m_graphBuilder = nullptr;
+    IMediaControl* m_mediaControl = nullptr;
+    IVideoWindow* m_videoWindow = nullptr;
+    IBasicAudio* m_basicAudio = nullptr;
+    IMediaSeeking* m_mediaSeeking = nullptr;
+    IMediaEventEx* m_mediaEvent = nullptr;
+    bool m_isVideoPlaying = false;
+
+    // 视频全屏悬浮控制覆盖层
+    HWND m_hBtnSkipOverlay = nullptr;
+    HWND m_hStaticTimeOverlay = nullptr;
+    HFONT m_hOverlayFont = nullptr;
 };
 
 } // namespace yanlv

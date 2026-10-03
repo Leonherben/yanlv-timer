@@ -57,6 +57,8 @@ target_link_libraries(YanlvTimer PRIVATE
     mfplat
     mfuuid
     mfreadwrite
+    strmiids
+    oleaut32
 )
 
 # 单元测试目标

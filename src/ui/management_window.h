@@ -76,6 +76,8 @@ private:
     HWND m_hRadioRemindBreak = nullptr;
     HWND m_hEditMediaPath = nullptr;
     HWND m_hBtnBrowseMedia = nullptr;
+    HWND m_hRadioVideoMuted = nullptr;
+    HWND m_hRadioVideoAudio = nullptr;
     HWND m_hBtnSaveSettings = nullptr;
 
     std::vector<Category> m_cachedCategories;

@@ -38,6 +38,8 @@ enum ControlId {
     ID_RADIO_REMIND_BREAK,
     ID_EDIT_MEDIA_PATH,
     ID_BTN_BROWSE_MEDIA,
+    ID_RADIO_VIDEO_MUTED,
+    ID_RADIO_VIDEO_AUDIO,
     ID_BTN_SAVE_SETTINGS
 };
 
@@ -385,10 +387,27 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     );
     SendMessage(m_hBtnBrowseMedia, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
+    CreateWindowW(L"STATIC", L"视频休息声音：", WS_CHILD | WS_VISIBLE, 16, 280, 120, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    m_hRadioVideoMuted = CreateWindowW(
+        L"BUTTON", L"静音播放 (推荐，安静休息)",
+        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
+        140, 278, 200, 20,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_RADIO_VIDEO_MUTED), hInstance, nullptr
+    );
+    SendMessage(m_hRadioVideoMuted, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    m_hRadioVideoAudio = CreateWindowW(
+        L"BUTTON", L"保留声音 (原声播放)",
+        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        350, 278, 180, 20,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_RADIO_VIDEO_AUDIO), hInstance, nullptr
+    );
+    SendMessage(m_hRadioVideoAudio, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
     m_hBtnSaveSettings = CreateWindowW(
         L"BUTTON", L"保存设置",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        140, 310, 140, 34,
+        140, 320, 140, 34,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_SAVE_SETTINGS), hInstance, nullptr
     );
     SendMessage(m_hBtnSaveSettings, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontBold), TRUE);
@@ -515,6 +534,8 @@ void ManagementWindow::RefreshSettings() {
     SendMessage(m_hRadioAutoBreak, BM_SETCHECK, config.breakMode == BreakMode::Auto ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessage(m_hRadioRemindBreak, BM_SETCHECK, config.breakMode == BreakMode::Remind ? BST_CHECKED : BST_UNCHECKED, 0);
     SetWindowTextW(m_hEditMediaPath, config.customMediaPath.c_str());
+    SendMessage(m_hRadioVideoMuted, BM_SETCHECK, config.videoMuted ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessage(m_hRadioVideoAudio, BM_SETCHECK, !config.videoMuted ? BST_CHECKED : BST_UNCHECKED, 0);
 }
 
 void ManagementWindow::OnChangeRecordCategory() {
@@ -641,6 +662,7 @@ void ManagementWindow::OnSaveSettings() {
     wchar_t buf[MAX_PATH];
     GetWindowTextW(m_hEditMediaPath, buf, MAX_PATH);
     config.customMediaPath = buf;
+    config.videoMuted = (SendMessage(m_hRadioVideoMuted, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
     Repository::Instance().SaveConfig(config);
     MessageBoxW(m_hWnd, L"设置保存成功！", L"成功", MB_OK | MB_ICONINFORMATION);

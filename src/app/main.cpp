@@ -254,3 +254,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
 
     return 0;
 }
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR, int nShowCmd) {
+    return wWinMain(hInstance, hPrevInstance, GetCommandLineW(), nShowCmd);
+}

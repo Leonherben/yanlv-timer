@@ -29,11 +29,7 @@ std::wstring Utf8ToWide(const std::string& str) {
 int64_t GetTodayStartTimestamp() {
     auto now = std::time(nullptr);
     std::tm tmNow{};
-#ifdef _MSC_VER
     localtime_s(&tmNow, &now);
-#else
-    localtime_r(&now, &tmNow);
-#endif
     tmNow.tm_hour = 0;
     tmNow.tm_min = 0;
     tmNow.tm_sec = 0;

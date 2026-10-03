@@ -50,11 +50,7 @@ std::wstring FormatDuration(int64_t seconds) {
 std::wstring FormatTimestamp(int64_t timestamp) {
     auto t = static_cast<std::time_t>(timestamp);
     std::tm tmVal{};
-#ifdef _MSC_VER
     localtime_s(&tmVal, &t);
-#else
-    localtime_r(&t, &tmVal);
-#endif
     wchar_t buf[64];
     wcsftime(buf, 64, L"%Y-%m-%d %H:%M", &tmVal);
     return buf;

@@ -28,7 +28,12 @@ jobs:
 
     - name: Build
       run: |
-        cmake --build build --config Release -- /v:m
+        cmake --build build --config Release 2>&1 | Tee-Object -FilePath build_output.txt
+
+    - name: Show Build Errors
+      if: failure()
+      run: |
+        Get-Content build_output.txt | Select-String -Pattern "error ", "error C", "error LNK", "fatal" -Context 3,3
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4

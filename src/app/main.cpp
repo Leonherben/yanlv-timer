@@ -1,8 +1,10 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shellapi.h>
 #include <objbase.h>
 #include <shlobj.h>
 #include <string>
+#include <thread>
 
 #include "src/core/timer_engine.h"
 #include "src/core/power_listener.h"
@@ -90,6 +92,10 @@ LRESULT CALLBACK MessageWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         }
         return 0;
     }
+    case WM_CLOSE: {
+        DestroyWindow(hWnd);
+        return 0;
+    }
     case WM_DESTROY: {
         KillTimer(hWnd, TIMER_ID_ENGINE_TICK);
         PostQuitMessage(0);
@@ -103,6 +109,19 @@ LRESULT CALLBACK MessageWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 } // namespace yanlv
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
+    // 0. 解析命令行参数，支持开发调试模式父进程绑定 (--parent-pid <PID>)
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    DWORD parentPid = 0;
+    if (argv) {
+        for (int i = 1; i < argc; ++i) {
+            if (std::wcscmp(argv[i], L"--parent-pid") == 0 && i + 1 < argc) {
+                parentPid = std::wcstoul(argv[i + 1], nullptr, 10);
+            }
+        }
+        LocalFree(argv);
+    }
+
     // 1. 单实例保证
     HANDLE hMutex = CreateMutexW(nullptr, TRUE, yanlv::SINGLE_INSTANCE_MUTEX);
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
@@ -142,6 +161,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         0, 0, 0, 0, 0,
         HWND_MESSAGE, nullptr, hInstance, nullptr
     );
+
+    // 如果指定了父进程 PID (例如由开发启动脚本启动)，监控父进程存活状态。
+    // 父进程一旦退出 (比如用户 X 掉控制台窗口)，本程序立即自毁退出
+    if (parentPid != 0) {
+        HANDLE hParent = OpenProcess(SYNCHRONIZE, FALSE, parentPid);
+        if (hParent) {
+            std::thread([hParent, hMsgWnd]() {
+                WaitForSingleObject(hParent, INFINITE);
+                CloseHandle(hParent);
+                if (hMsgWnd && IsWindow(hMsgWnd)) {
+                    PostMessageW(hMsgWnd, WM_CLOSE, 0, 0);
+                }
+                Sleep(300);
+                ExitProcess(0);
+            }).detach();
+        }
+    }
 
     // 7. 初始化系统托盘
     yanlv::TrayIcon::Instance().Initialize(hMsgWnd, yanlv::WM_TRAY_CALLBACK);

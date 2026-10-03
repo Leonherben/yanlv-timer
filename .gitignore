@@ -1,0 +1,42 @@
+# Build directories
+build/
+bin/
+out/
+.cache/
+CMakeFiles/
+CMakeCache.txt
+*.cmake
+Makefile
+
+# Compiled binaries and objects
+*.exe
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+*.pdb
+*.ilk
+*.exp
+
+# IDE and Editor files
+.vs/
+.vscode/
+.idea/
+*.sln
+*.vcxproj*
+*.user
+
+# Database runtime files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Log files and crash dumps
+*.log
+*.dmp
+
+# User assets or custom media (avoid committing large personal video files)
+assets/custom_media/*
+!assets/custom_media/.gitkeep

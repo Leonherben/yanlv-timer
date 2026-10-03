@@ -1,4 +1,4 @@
-﻿#include "src/core/timer_engine.h"
+#include "src/core/timer_engine.h"
 #include "src/db/repository.h"
 #include <ctime>
 #include <algorithm>
@@ -303,6 +303,14 @@ void TimerEngine::Update() {
             m_lastReportedRemaining = remaining;
             if (m_onTick) {
                 m_onTick(remaining, curSeg);
+            }
+        }
+    } else if (st == TimerState::Idle) {
+        int64_t curSec = static_cast<int64_t>(std::time(nullptr));
+        if (curSec != m_lastReportedRemaining) {
+            m_lastReportedRemaining = curSec;
+            if (m_onTick) {
+                m_onTick(m_plannedDuration > 0 ? m_plannedDuration : 25 * 60, 0);
             }
         }
     }

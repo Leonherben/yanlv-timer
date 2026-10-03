@@ -187,6 +187,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     clock.SetPosition(config.clockPosX, config.clockPosY);
     clock.SetAlwaysOnTop(config.alwaysOnTop);
     clock.Create();
+    clock.ApplyConfig(config);
     clock.Show();
     clock.UpdateDisplay(config.lastDurationSeconds, yanlv::TimerState::Idle);
 

@@ -79,7 +79,39 @@ bool FloatingClock::Create() {
 
     if (!m_hWnd) return false;
 
-    // 创建内存 DC 与 DIBSection
+    RecreateBitmapAndTarget(m_width, m_height);
+
+    Render();
+    return true;
+}
+
+void FloatingClock::RecreateBitmapAndTarget(int width, int height) {
+    bool sizeChanged = (m_width != width || m_height != height);
+    m_width = width;
+    m_height = height;
+
+    if (m_dcRenderTarget && !sizeChanged) {
+        if (m_textFormatTime) {
+            m_textFormatTime->Release();
+            m_textFormatTime = nullptr;
+        }
+        m_textFormatTime = D2DRenderer::Instance().CreateTextFormat(
+            L"Consolas", static_cast<float>(m_fontSize), DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER
+        );
+        return;
+    }
+
+    if (m_textFormatTime) { m_textFormatTime->Release(); m_textFormatTime = nullptr; }
+    if (m_textFormatStatus) { m_textFormatStatus->Release(); m_textFormatStatus = nullptr; }
+    if (m_brushBg) { m_brushBg->Release(); m_brushBg = nullptr; }
+    if (m_brushBorder) { m_brushBorder->Release(); m_brushBorder = nullptr; }
+    if (m_brushText) { m_brushText->Release(); m_brushText = nullptr; }
+    if (m_brushAccent) { m_brushAccent->Release(); m_brushAccent = nullptr; }
+    if (m_dcRenderTarget) { m_dcRenderTarget->Release(); m_dcRenderTarget = nullptr; }
+
+    if (m_hBitmap) { DeleteObject(m_hBitmap); m_hBitmap = nullptr; }
+    if (m_memDC) { DeleteDC(m_memDC); m_memDC = nullptr; }
+
     HDC screenDC = GetDC(nullptr);
     m_memDC = CreateCompatibleDC(screenDC);
     ReleaseDC(nullptr, screenDC);
@@ -87,7 +119,7 @@ bool FloatingClock::Create() {
     BITMAPINFO bmi{};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bmi.bmiHeader.biWidth = m_width;
-    bmi.bmiHeader.biHeight = -m_height; // 自上而下
+    bmi.bmiHeader.biHeight = -m_height;
     bmi.bmiHeader.biPlanes = 1;
     bmi.bmiHeader.biBitCount = 32;
     bmi.bmiHeader.biCompression = BI_RGB;
@@ -95,7 +127,6 @@ bool FloatingClock::Create() {
     m_hBitmap = CreateDIBSection(m_memDC, &bmi, DIB_RGB_COLORS, &m_bitmapBits, nullptr, 0);
     SelectObject(m_memDC, m_hBitmap);
 
-    // 创建 Direct2D DC Render Target
     if (D2DRenderer::Instance().Initialize()) {
         D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
             D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -117,16 +148,18 @@ bool FloatingClock::Create() {
             m_dcRenderTarget->CreateSolidColorBrush(D2D1::ColorF(0.30f, 0.82f, 0.88f, 1.0f), &m_brushAccent);
 
             m_textFormatTime = D2DRenderer::Instance().CreateTextFormat(
-                L"Consolas", 22.0f, DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER
+                L"Consolas", static_cast<float>(m_fontSize), DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER
             );
+            float statusPt = m_fontSize >= 26 ? 11.0f : 10.0f;
             m_textFormatStatus = D2DRenderer::Instance().CreateTextFormat(
-                L"Microsoft YaHei", 10.0f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER
+                L"Microsoft YaHei", statusPt, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER
             );
         }
     }
 
-    Render();
-    return true;
+    if (m_hWnd) {
+        SetWindowPos(m_hWnd, nullptr, 0, 0, m_width, m_height, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 }
 
 void FloatingClock::Show() {
@@ -180,43 +213,66 @@ void FloatingClock::SetAlwaysOnTop(bool onTop) {
     }
 }
 
+namespace {
+D2D1_COLOR_F HexToD2DColor(const std::string& hex) {
+    if (hex.size() >= 7 && hex[0] == '#') {
+        unsigned int r = 255, g = 255, b = 255;
+        if (sscanf_s(hex.c_str() + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
+            return D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 1.0f);
+        }
+    }
+    return D2D1::ColorF(0.96f, 0.96f, 0.98f, 1.0f);
+}
+} // namespace
+
 void FloatingClock::UpdateDisplay(int64_t remainingSeconds, TimerState state) {
     m_currentSeconds = remainingSeconds;
     m_currentState = state;
 
-    int64_t hrs = remainingSeconds / 3600;
-    int64_t mins = (remainingSeconds % 3600) / 60;
-    int64_t secs = remainingSeconds % 60;
-
-    wchar_t buf[32];
-    if (hrs > 0) {
-        swprintf_s(buf, L"%02lld:%02lld:%02lld", hrs, mins, secs);
+    if (state == TimerState::Idle && m_showRealTimeWhenIdle) {
+        auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        tm localTm{};
+        localtime_s(&localTm, &now);
+        wchar_t buf[32];
+        swprintf_s(buf, L"%02d:%02d:%02d", localTm.tm_hour, localTm.tm_min, localTm.tm_sec);
+        m_timeString = buf;
+        m_statusString = L"时钟";
+        if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.30f, 0.82f, 0.88f, 1.0f));
     } else {
-        swprintf_s(buf, L"%02lld:%02lld", mins, secs);
-    }
-    m_timeString = buf;
+        int64_t hrs = remainingSeconds / 3600;
+        int64_t mins = (remainingSeconds % 3600) / 60;
+        int64_t secs = remainingSeconds % 60;
 
-    switch (state) {
-    case TimerState::Idle:
-        m_statusString = L"待开始";
-        if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.30f, 0.82f, 0.88f, 1.0f)); // 青蓝
-        break;
-    case TimerState::Studying:
-        m_statusString = L"专注中";
-        if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.26f, 0.65f, 0.96f, 1.0f)); // 宁静蓝
-        break;
-    case TimerState::Paused:
-        m_statusString = L"已暂停";
-        if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(1.0f, 0.65f, 0.15f, 1.0f)); // 暖琥珀
-        break;
-    case TimerState::BreakPending:
-        m_statusString = L"待休息";
-        if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.40f, 0.80f, 0.40f, 1.0f)); // 柔绿
-        break;
-    case TimerState::Breaking:
-        m_statusString = L"休息中";
-        if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.35f, 0.85f, 0.45f, 1.0f)); // 翡翠绿
-        break;
+        wchar_t buf[32];
+        if (hrs > 0) {
+            swprintf_s(buf, L"%02lld:%02lld:%02lld", hrs, mins, secs);
+        } else {
+            swprintf_s(buf, L"%02lld:%02lld", mins, secs);
+        }
+        m_timeString = buf;
+
+        switch (state) {
+        case TimerState::Idle:
+            m_statusString = L"待开始";
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.30f, 0.82f, 0.88f, 1.0f));
+            break;
+        case TimerState::Studying:
+            m_statusString = L"专注中";
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.26f, 0.65f, 0.96f, 1.0f));
+            break;
+        case TimerState::Paused:
+            m_statusString = L"已暂停";
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(1.0f, 0.65f, 0.15f, 1.0f));
+            break;
+        case TimerState::BreakPending:
+            m_statusString = L"待休息";
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.40f, 0.80f, 0.40f, 1.0f));
+            break;
+        case TimerState::Breaking:
+            m_statusString = L"休息中";
+            if (m_brushAccent) m_brushAccent->SetColor(D2D1::ColorF(0.35f, 0.85f, 0.45f, 1.0f));
+            break;
+        }
     }
 
     Render();
@@ -236,16 +292,23 @@ void FloatingClock::Render() {
         D2D1::RectF(2.0f, 2.0f, static_cast<float>(m_width) - 2.0f, static_cast<float>(m_height) - 2.0f),
         16.0f, 16.0f
     );
-    m_dcRenderTarget->FillRoundedRectangle(rrect, m_brushBg);
-    m_dcRenderTarget->DrawRoundedRectangle(rrect, m_brushBorder, 1.2f);
+
+    float bgAlpha = static_cast<float>(m_opacityPercent) / 100.0f;
+    if (m_opacityPercent > 0) {
+        m_brushBg->SetColor(D2D1::ColorF(0.08f, 0.09f, 0.12f, bgAlpha));
+        m_brushBorder->SetColor(D2D1::ColorF(1.0f, 1.0f, 1.0f, (std::min)(0.25f, bgAlpha * 0.28f)));
+        m_dcRenderTarget->FillRoundedRectangle(rrect, m_brushBg);
+        m_dcRenderTarget->DrawRoundedRectangle(rrect, m_brushBorder, 1.2f);
+    }
 
     // 绘制左侧状态指示点
-    float dotX = 18.0f;
+    float dotX = 16.0f;
     float dotY = static_cast<float>(m_height) / 2.0f;
     m_dcRenderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(dotX, dotY), 4.5f, 4.5f), m_brushAccent);
 
-    // 绘制状态文字 (点下方微标或旁边)
-    D2D1_RECT_F statusRect = D2D1::RectF(26.0f, 6.0f, 62.0f, static_cast<float>(m_height) - 6.0f);
+    // 绘制状态文字 (点右侧微标)
+    float statusW = 38.0f;
+    D2D1_RECT_F statusRect = D2D1::RectF(dotX + 7.0f, 6.0f, dotX + 7.0f + statusW, static_cast<float>(m_height) - 6.0f);
     m_dcRenderTarget->DrawText(
         m_statusString.c_str(),
         static_cast<UINT32>(m_statusString.size()),
@@ -255,7 +318,10 @@ void FloatingClock::Render() {
     );
 
     // 绘制时间文本 (居右侧主体区域)
-    D2D1_RECT_F timeRect = D2D1::RectF(58.0f, 2.0f, static_cast<float>(m_width) - 8.0f, static_cast<float>(m_height) - 2.0f);
+    if (m_brushText) {
+        m_brushText->SetColor(HexToD2DColor(m_textColorHex));
+    }
+    D2D1_RECT_F timeRect = D2D1::RectF(dotX + 6.0f + statusW, 2.0f, static_cast<float>(m_width) - 6.0f, static_cast<float>(m_height) - 2.0f);
     m_dcRenderTarget->DrawText(
         m_timeString.c_str(),
         static_cast<UINT32>(m_timeString.size()),
@@ -276,6 +342,24 @@ void FloatingClock::Render() {
     blend.AlphaFormat = AC_SRC_ALPHA;
 
     UpdateLayeredWindow(m_hWnd, nullptr, &ptDst, &sz, m_memDC, &ptSrc, 0, &blend, ULW_ALPHA);
+}
+
+void FloatingClock::ApplyConfig(const AppConfig& config) {
+    m_opacityPercent = config.clockOpacityPercent;
+    m_fontSize = config.clockFontSize;
+    m_textColorHex = config.clockTextColor;
+    m_showRealTimeWhenIdle = config.showRealTimeWhenIdle;
+    SetAlwaysOnTop(config.alwaysOnTop);
+
+    int targetW = 172;
+    int targetH = 54;
+    if (m_fontSize == 18) { targetW = 154; targetH = 48; }
+    else if (m_fontSize == 22) { targetW = 172; targetH = 54; }
+    else if (m_fontSize == 26) { targetW = 196; targetH = 60; }
+    else if (m_fontSize == 32) { targetW = 226; targetH = 68; }
+
+    RecreateBitmapAndTarget(targetW, targetH);
+    UpdateDisplay(m_currentSeconds, m_currentState);
 }
 
 void FloatingClock::ShowContextMenu(int screenX, int screenY) {

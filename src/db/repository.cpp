@@ -470,6 +470,10 @@ bool Repository::LoadConfig(AppConfig& config) {
             else if (sKey == "clock_x") config.clockPosX = std::stoi(sVal);
             else if (sKey == "clock_y") config.clockPosY = std::stoi(sVal);
             else if (sKey == "always_on_top") config.alwaysOnTop = (sVal == "1");
+            else if (sKey == "clock_opacity") config.clockOpacityPercent = std::stoi(sVal);
+            else if (sKey == "clock_font_size") config.clockFontSize = std::stoi(sVal);
+            else if (sKey == "clock_text_color") config.clockTextColor = sVal;
+            else if (sKey == "show_real_time") config.showRealTimeWhenIdle = (sVal == "1");
         }
         sqlite3_finalize(stmt);
     }
@@ -501,6 +505,10 @@ bool Repository::SaveConfig(const AppConfig& config) {
     upsertSetting("clock_x", std::to_string(config.clockPosX));
     upsertSetting("clock_y", std::to_string(config.clockPosY));
     upsertSetting("always_on_top", config.alwaysOnTop ? "1" : "0");
+    upsertSetting("clock_opacity", std::to_string(config.clockOpacityPercent));
+    upsertSetting("clock_font_size", std::to_string(config.clockFontSize));
+    upsertSetting("clock_text_color", config.clockTextColor);
+    upsertSetting("show_real_time", config.showRealTimeWhenIdle ? "1" : "0");
 
     return true;
 }

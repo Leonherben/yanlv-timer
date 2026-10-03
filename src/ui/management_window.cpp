@@ -1,13 +1,12 @@
 #include "src/ui/management_window.h"
+#include "src/ui/floating_clock.h"
 #include "src/db/repository.h"
 #include <commctrl.h>
 #include <commdlg.h>
 #include <ctime>
 #include <sstream>
 #include <iomanip>
-
-#pragma comment(lib, "comctl32.lib")
-#pragma comment(lib, "comdlg32.lib")
+#include <algorithm>
 
 namespace yanlv {
 
@@ -25,7 +24,9 @@ LRESULT CALLBACK TabPanelProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 }
 
 enum ControlId {
-    ID_TAB_CONTROL = 3001,
+    ID_TAB_STATS = 3001,
+    ID_TAB_RECORDS,
+    ID_TAB_SETTINGS,
     ID_COMBO_FILTER,
     ID_LIST_RECORDS,
     ID_BTN_CHANGE_CAT,
@@ -34,6 +35,12 @@ enum ControlId {
     ID_EDIT_NEW_CAT,
     ID_BTN_ADD_CAT,
     ID_BTN_RENAME_CAT,
+    ID_RADIO_IDLE_REALTIME,
+    ID_RADIO_IDLE_DURATION,
+    ID_COMBO_OPACITY,
+    ID_COMBO_FONT_SIZE,
+    ID_COMBO_TEXT_COLOR,
+    ID_CHECK_ALWAYS_ON_TOP,
     ID_RADIO_AUTO_BREAK,
     ID_RADIO_REMIND_BREAK,
     ID_EDIT_MEDIA_PATH,
@@ -60,12 +67,13 @@ std::wstring FormatDuration(int64_t seconds) {
 }
 
 std::wstring FormatTimestamp(int64_t timestamp) {
-    auto t = static_cast<std::time_t>(timestamp);
-    std::tm tmVal{};
-    localtime_s(&tmVal, &t);
-    wchar_t buf[64];
-    wcsftime(buf, 64, L"%Y-%m-%d %H:%M", &tmVal);
-    return buf;
+    std::time_t t = static_cast<std::time_t>(timestamp);
+    std::tm tm{};
+    localtime_s(&tm, &t);
+
+    std::wstringstream ss;
+    ss << std::put_time(&tm, L"%Y-%m-%d %H:%M");
+    return ss.str();
 }
 
 } // namespace
@@ -80,6 +88,14 @@ ManagementWindow::ManagementWindow() = default;
 ManagementWindow::~ManagementWindow() {
     if (m_hFont) DeleteObject(m_hFont);
     if (m_hFontBold) DeleteObject(m_hFontBold);
+    if (m_hFontTitle) DeleteObject(m_hFontTitle);
+    if (m_hFontSection) DeleteObject(m_hFontSection);
+
+    if (m_hBrushBg) DeleteObject(m_hBrushBg);
+    if (m_hBrushCard) DeleteObject(m_hBrushCard);
+    if (m_hBrushInput) DeleteObject(m_hBrushInput);
+    if (m_hBrushAccent) DeleteObject(m_hBrushAccent);
+
     if (m_hWnd) {
         DestroyWindow(m_hWnd);
         m_hWnd = nullptr;
@@ -91,10 +107,16 @@ bool ManagementWindow::Create() {
 
     INITCOMMONCONTROLSEX icex{};
     icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
-    icex.dwICC = ICC_TAB_CLASSES | ICC_LISTVIEW_CLASSES;
+    icex.dwICC = ICC_LISTVIEW_CLASSES;
     InitCommonControlsEx(&icex);
 
     HINSTANCE hInstance = GetModuleHandle(nullptr);
+
+    // 现代深色主题画刷
+    m_hBrushBg = CreateSolidBrush(RGB(22, 24, 30));       // 窗口深色底
+    m_hBrushCard = CreateSolidBrush(RGB(30, 33, 42));     // 卡片/面板底
+    m_hBrushInput = CreateSolidBrush(RGB(38, 42, 54));    // 控件输入区底
+    m_hBrushAccent = CreateSolidBrush(RGB(59, 130, 246)); // 高亮蓝
 
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(WNDCLASSEXW);
@@ -102,7 +124,7 @@ bool ManagementWindow::Create() {
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    wc.hbrBackground = m_hBrushBg;
     wc.lpszClassName = MANAGEMENT_WINDOW_CLASS;
     RegisterClassExW(&wc);
 
@@ -112,31 +134,43 @@ bool ManagementWindow::Create() {
     wcPanel.lpfnWndProc = TabPanelProc;
     wcPanel.hInstance = hInstance;
     wcPanel.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wcPanel.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    wcPanel.hbrBackground = m_hBrushCard;
     wcPanel.lpszClassName = TAB_PANEL_CLASS;
     RegisterClassExW(&wcPanel);
 
     m_hFont = CreateFontW(
         -13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei"
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI"
     );
 
     m_hFontBold = CreateFontW(
-        -14, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        -13, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei"
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI"
     );
 
-    int w = 620;
-    int h = 480;
+    m_hFontSection = CreateFontW(
+        -14, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI"
+    );
+
+    m_hFontTitle = CreateFontW(
+        -18, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI"
+    );
+
+    int w = 680;
+    int h = 570;
     int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
     int y = (GetSystemMetrics(SM_CYSCREEN) - h) / 2;
 
     m_hWnd = CreateWindowExW(
         WS_EX_DLGMODALFRAME,
         MANAGEMENT_WINDOW_CLASS,
-        L"言律时钟 - 控制中心 (统计与记录)",
+        L"言律时钟 - 控制中心 (统计分析与外观设置)",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         x, y, w, h,
         nullptr, nullptr, hInstance, this
@@ -144,161 +178,157 @@ bool ManagementWindow::Create() {
 
     if (!m_hWnd) return false;
 
-    CreateTabs(m_hWnd);
+    CreateModernTabs(m_hWnd);
     CreateStatsPage(m_hWnd);
     CreateRecordsPage(m_hWnd);
     CreateSettingsPage(m_hWnd);
 
     SwitchTab(0);
-    RefreshAll();
-
     return true;
 }
 
-void ManagementWindow::CreateTabs(HWND hWnd) {
+void ManagementWindow::CreateModernTabs(HWND hWnd) {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
 
-    m_hTab = CreateWindowW(
-        WC_TABCONTROLW, L"",
-        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
-        12, 12, 580, 416,
-        hWnd, reinterpret_cast<HMENU>(ID_TAB_CONTROL), hInstance, nullptr
+    m_hBtnTabStats = CreateWindowW(
+        L"BUTTON", L"📊 学习看板",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        16, 12, 130, 34,
+        hWnd, reinterpret_cast<HMENU>(ID_TAB_STATS), hInstance, nullptr
     );
-    SendMessage(m_hTab, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+    SendMessage(m_hBtnTabStats, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontBold), TRUE);
 
-    TCITEMW tie{};
-    tie.mask = TCIF_TEXT;
-    tie.pszText = const_cast<LPWSTR>(L" 学习统计 ");
-    TabCtrl_InsertItem(m_hTab, 0, &tie);
+    m_hBtnTabRecords = CreateWindowW(
+        L"BUTTON", L"📋 专注记录",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        154, 12, 130, 34,
+        hWnd, reinterpret_cast<HMENU>(ID_TAB_RECORDS), hInstance, nullptr
+    );
+    SendMessage(m_hBtnTabRecords, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontBold), TRUE);
 
-    tie.pszText = const_cast<LPWSTR>(L" 历史记录 ");
-    TabCtrl_InsertItem(m_hTab, 1, &tie);
-
-    tie.pszText = const_cast<LPWSTR>(L" 类别与设置 ");
-    TabCtrl_InsertItem(m_hTab, 2, &tie);
+    m_hBtnTabSettings = CreateWindowW(
+        L"BUTTON", L"⚙️ 时钟与系统设置",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        292, 12, 160, 34,
+        hWnd, reinterpret_cast<HMENU>(ID_TAB_SETTINGS), hInstance, nullptr
+    );
+    SendMessage(m_hBtnTabSettings, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontBold), TRUE);
 }
 
 void ManagementWindow::CreateStatsPage(HWND hWnd) {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
-
-    m_hPanelStats = CreateWindowW(
-        TAB_PANEL_CLASS, L"",
-        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
-        20, 48, 564, 370,
+    m_hPanelStats = CreateWindowExW(
+        0, TAB_PANEL_CLASS, nullptr,
+        WS_CHILD | WS_VISIBLE,
+        16, 54, 648, 470,
         hWnd, nullptr, hInstance, nullptr
     );
 
-    // 概览卡片区域
-    m_hStaticToday = CreateWindowW(
-        L"STATIC", L"今日学习：0小时0分 (0次)",
-        WS_CHILD | WS_VISIBLE,
-        16, 16, 532, 28,
-        m_hPanelStats, nullptr, hInstance, nullptr
-    );
-    SendMessage(m_hStaticToday, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontBold), TRUE);
+    // 今日学习卡片
+    HWND hGrpToday = CreateWindowW(L"STATIC", L"今日专注", WS_CHILD | WS_VISIBLE, 16, 16, 298, 20, m_hPanelStats, nullptr, hInstance, nullptr);
+    SendMessage(hGrpToday, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontSection), TRUE);
 
-    m_hStaticTotal = CreateWindowW(
-        L"STATIC", L"总体累计：0小时0分 (0次)",
-        WS_CHILD | WS_VISIBLE,
-        16, 48, 532, 28,
-        m_hPanelStats, nullptr, hInstance, nullptr
-    );
-    SendMessage(m_hStaticTotal, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontBold), TRUE);
+    m_hStaticToday = CreateWindowW(L"STATIC", L"今日学习：0分 0秒 (0次)", WS_CHILD | WS_VISIBLE, 16, 42, 298, 30, m_hPanelStats, nullptr, hInstance, nullptr);
+    SendMessage(m_hStaticToday, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontTitle), TRUE);
 
-    CreateWindowW(
-        L"STATIC", L"各类别专注时长与次数占比：",
-        WS_CHILD | WS_VISIBLE,
-        16, 88, 532, 20,
-        m_hPanelStats, nullptr, hInstance, nullptr
-    );
+    // 总体累计卡片
+    HWND hGrpTotal = CreateWindowW(L"STATIC", L"累计专注", WS_CHILD | WS_VISIBLE, 330, 16, 302, 20, m_hPanelStats, nullptr, hInstance, nullptr);
+    SendMessage(hGrpTotal, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontSection), TRUE);
 
-    // 各类别统计列表
+    m_hStaticTotal = CreateWindowW(L"STATIC", L"总体累计：0分 0秒 (0次)", WS_CHILD | WS_VISIBLE, 330, 42, 302, 30, m_hPanelStats, nullptr, hInstance, nullptr);
+    SendMessage(m_hStaticTotal, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontTitle), TRUE);
+
+    // 类别分布列表
+    HWND hGrpCat = CreateWindowW(L"STATIC", L"专注类别分布明细", WS_CHILD | WS_VISIBLE, 16, 90, 616, 20, m_hPanelStats, nullptr, hInstance, nullptr);
+    SendMessage(hGrpCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontSection), TRUE);
+
     m_hListCatStats = CreateWindowExW(
-        WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
+        WS_EX_CLIENTEDGE, WC_LISTVIEWW, nullptr,
         WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL,
-        16, 114, 532, 240,
+        16, 116, 616, 338,
         m_hPanelStats, nullptr, hInstance, nullptr
     );
-    ListView_SetExtendedListViewStyle(m_hListCatStats, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
     SendMessage(m_hListCatStats, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+    ListView_SetExtendedListViewStyle(m_hListCatStats, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
+    ListView_SetBkColor(m_hListCatStats, RGB(30, 33, 42));
+    ListView_SetTextBkColor(m_hListCatStats, RGB(30, 33, 42));
+    ListView_SetTextColor(m_hListCatStats, RGB(235, 240, 250));
 
     LVCOLUMNW lvc{};
-    lvc.mask = LVCF_TEXT | LVCF_WIDTH;
-    lvc.cx = 180;
-    lvc.pszText = const_cast<LPWSTR>(L"类别名称");
+    lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
+
+    lvc.iSubItem = 0; lvc.cx = 200; lvc.pszText = const_cast<LPWSTR>(L"类别名称");
     ListView_InsertColumn(m_hListCatStats, 0, &lvc);
 
-    lvc.cx = 200;
-    lvc.pszText = const_cast<LPWSTR>(L"累计时长");
+    lvc.iSubItem = 1; lvc.cx = 230; lvc.pszText = const_cast<LPWSTR>(L"累计专注时长");
     ListView_InsertColumn(m_hListCatStats, 1, &lvc);
 
-    lvc.cx = 140;
-    lvc.pszText = const_cast<LPWSTR>(L"专注次数");
+    lvc.iSubItem = 2; lvc.cx = 180; lvc.pszText = const_cast<LPWSTR>(L"专注次数");
     ListView_InsertColumn(m_hListCatStats, 2, &lvc);
 }
 
 void ManagementWindow::CreateRecordsPage(HWND hWnd) {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
-
-    m_hPanelRecords = CreateWindowW(
-        TAB_PANEL_CLASS, L"",
-        WS_CHILD | WS_CLIPCHILDREN,
-        20, 48, 564, 370,
+    m_hPanelRecords = CreateWindowExW(
+        0, TAB_PANEL_CLASS, nullptr,
+        WS_CHILD | WS_VISIBLE,
+        16, 54, 648, 470,
         hWnd, nullptr, hInstance, nullptr
     );
 
-    CreateWindowW(L"STATIC", L"筛选类别：", WS_CHILD | WS_VISIBLE, 16, 16, 80, 20, m_hPanelRecords, nullptr, hInstance, nullptr);
+    HWND hLblFilter = CreateWindowW(L"STATIC", L"类别筛选：", WS_CHILD | WS_VISIBLE, 16, 16, 75, 22, m_hPanelRecords, nullptr, hInstance, nullptr);
+    SendMessage(hLblFilter, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
     m_hComboFilter = CreateWindowW(
-        L"COMBOBOX", L"",
+        L"COMBOBOX", nullptr,
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-        96, 12, 140, 200,
+        96, 13, 160, 200,
         m_hPanelRecords, reinterpret_cast<HMENU>(ID_COMBO_FILTER), hInstance, nullptr
     );
     SendMessage(m_hComboFilter, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
     m_hListRecords = CreateWindowExW(
-        WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
+        WS_EX_CLIENTEDGE, WC_LISTVIEWW, nullptr,
         WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL,
-        16, 48, 532, 270,
+        16, 48, 616, 372,
         m_hPanelRecords, reinterpret_cast<HMENU>(ID_LIST_RECORDS), hInstance, nullptr
     );
-    ListView_SetExtendedListViewStyle(m_hListRecords, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
     SendMessage(m_hListRecords, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+    ListView_SetExtendedListViewStyle(m_hListRecords, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
+    ListView_SetBkColor(m_hListRecords, RGB(30, 33, 42));
+    ListView_SetTextBkColor(m_hListRecords, RGB(30, 33, 42));
+    ListView_SetTextColor(m_hListRecords, RGB(235, 240, 250));
 
     LVCOLUMNW lvc{};
-    lvc.mask = LVCF_TEXT | LVCF_WIDTH;
-    lvc.cx = 100;
-    lvc.pszText = const_cast<LPWSTR>(L"类别");
+    lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
+
+    lvc.iSubItem = 0; lvc.cx = 110; lvc.pszText = const_cast<LPWSTR>(L"学习分类");
     ListView_InsertColumn(m_hListRecords, 0, &lvc);
 
-    lvc.cx = 140;
-    lvc.pszText = const_cast<LPWSTR>(L"开始时间");
+    lvc.iSubItem = 1; lvc.cx = 145; lvc.pszText = const_cast<LPWSTR>(L"开始时间");
     ListView_InsertColumn(m_hListRecords, 1, &lvc);
 
-    lvc.cx = 90;
-    lvc.pszText = const_cast<LPWSTR>(L"计划时长");
+    lvc.iSubItem = 2; lvc.cx = 105; lvc.pszText = const_cast<LPWSTR>(L"计划时长");
     ListView_InsertColumn(m_hListRecords, 2, &lvc);
 
-    lvc.cx = 90;
-    lvc.pszText = const_cast<LPWSTR>(L"实际时长");
+    lvc.iSubItem = 3; lvc.cx = 115; lvc.pszText = const_cast<LPWSTR>(L"实际有效时长");
     ListView_InsertColumn(m_hListRecords, 3, &lvc);
 
-    lvc.cx = 100;
-    lvc.pszText = const_cast<LPWSTR>(L"结束方式");
+    lvc.iSubItem = 4; lvc.cx = 120; lvc.pszText = const_cast<LPWSTR>(L"结束状态");
     ListView_InsertColumn(m_hListRecords, 4, &lvc);
 
     m_hBtnChangeCat = CreateWindowW(
         L"BUTTON", L"修改记录分类",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        16, 328, 120, 30,
+        380, 428, 120, 32,
         m_hPanelRecords, reinterpret_cast<HMENU>(ID_BTN_CHANGE_CAT), hInstance, nullptr
     );
     SendMessage(m_hBtnChangeCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
     m_hBtnDeleteRecord = CreateWindowW(
-        L"BUTTON", L"删除选中记录",
+        L"BUTTON", L"删除此记录",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        148, 328, 120, 30,
+        512, 428, 120, 32,
         m_hPanelRecords, reinterpret_cast<HMENU>(ID_BTN_DELETE_RECORD), hInstance, nullptr
     );
     SendMessage(m_hBtnDeleteRecord, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
@@ -306,58 +336,112 @@ void ManagementWindow::CreateRecordsPage(HWND hWnd) {
 
 void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
-
-    m_hPanelSettings = CreateWindowW(
-        TAB_PANEL_CLASS, L"",
-        WS_CHILD | WS_CLIPCHILDREN,
-        20, 48, 564, 370,
+    m_hPanelSettings = CreateWindowExW(
+        0, TAB_PANEL_CLASS, nullptr,
+        WS_CHILD | WS_VISIBLE,
+        16, 54, 648, 470,
         hWnd, nullptr, hInstance, nullptr
     );
 
-    // 类别管理分组
-    CreateWindowW(L"STATIC", L"【学习类别管理】", WS_CHILD | WS_VISIBLE, 16, 14, 180, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    // ==========================================
+    // 1. 悬浮时钟外观与行为
+    // ==========================================
+    HWND hSecClock = CreateWindowW(L"STATIC", L"【悬浮时钟外观与行为】", WS_CHILD | WS_VISIBLE, 16, 10, 240, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    SendMessage(hSecClock, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontSection), TRUE);
 
-    m_hListCategories = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"LISTBOX", L"",
-        WS_CHILD | WS_VISIBLE | LBS_NOTIFY | WS_VSCROLL,
-        16, 38, 200, 130,
-        m_hPanelSettings, reinterpret_cast<HMENU>(ID_LIST_CATEGORIES), hInstance, nullptr
-    );
-    SendMessage(m_hListCategories, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+    HWND hLblIdle = CreateWindowW(L"STATIC", L"待机显示模式：", WS_CHILD | WS_VISIBLE, 16, 34, 110, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    SendMessage(hLblIdle, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
-    CreateWindowW(L"STATIC", L"新类别名称：", WS_CHILD | WS_VISIBLE, 230, 40, 90, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
-    m_hEditNewCat = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE,
-        230, 64, 180, 24,
-        m_hPanelSettings, reinterpret_cast<HMENU>(ID_EDIT_NEW_CAT), hInstance, nullptr
-    );
-    SendMessage(m_hEditNewCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
-
-    m_hBtnAddCat = CreateWindowW(
-        L"BUTTON", L"添加类别",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        420, 62, 90, 28,
-        m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_ADD_CAT), hInstance, nullptr
-    );
-    SendMessage(m_hBtnAddCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
-
-    m_hBtnRenameCat = CreateWindowW(
-        L"BUTTON", L"重命名选中类别",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        230, 100, 130, 28,
-        m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_RENAME_CAT), hInstance, nullptr
-    );
-    SendMessage(m_hBtnRenameCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
-
-    // 休息设置分组
-    CreateWindowW(L"STATIC", L"【五分钟全屏休息设置】", WS_CHILD | WS_VISIBLE, 16, 184, 200, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
-
-    CreateWindowW(L"STATIC", L"学习结束后行为：", WS_CHILD | WS_VISIBLE, 16, 210, 120, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
-    m_hRadioAutoBreak = CreateWindowW(
-        L"BUTTON", L"自动休息 (立即进入全屏休息)",
+    m_hRadioIdleRealTime = CreateWindowW(
+        L"BUTTON", L"显示当前实际时间 (北京时间)",
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        140, 208, 220, 20,
+        130, 32, 220, 20,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_RADIO_IDLE_REALTIME), hInstance, nullptr
+    );
+    SendMessage(m_hRadioIdleRealTime, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    m_hRadioIdleDuration = CreateWindowW(
+        L"BUTTON", L"显示计划倒计时 (如 25:00)",
+        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        360, 32, 220, 20,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_RADIO_IDLE_DURATION), hInstance, nullptr
+    );
+    SendMessage(m_hRadioIdleDuration, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    // 背景透明度
+    HWND hLblOpac = CreateWindowW(L"STATIC", L"背景透明度：", WS_CHILD | WS_VISIBLE, 16, 64, 90, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    SendMessage(hLblOpac, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    m_hComboOpacity = CreateWindowW(
+        L"COMBOBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+        110, 61, 140, 200,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_COMBO_OPACITY), hInstance, nullptr
+    );
+    SendMessage(m_hComboOpacity, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+    SendMessageW(m_hComboOpacity, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"100% 完全不透明"));
+    SendMessageW(m_hComboOpacity, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"85% 默认微透 (推荐)"));
+    SendMessageW(m_hComboOpacity, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"65% 半透明磨砂"));
+    SendMessageW(m_hComboOpacity, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"45% 高透明"));
+    SendMessageW(m_hComboOpacity, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"20% 极轻微透"));
+    SendMessageW(m_hComboOpacity, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"0% 全透 (只留数字)"));
+
+    // 时间字号
+    HWND hLblFont = CreateWindowW(L"STATIC", L"时间大小：", WS_CHILD | WS_VISIBLE, 264, 64, 75, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    SendMessage(hLblFont, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    m_hComboFontSize = CreateWindowW(
+        L"COMBOBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+        342, 61, 120, 200,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_COMBO_FONT_SIZE), hInstance, nullptr
+    );
+    SendMessage(m_hComboFontSize, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+    SendMessageW(m_hComboFontSize, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"微型 (18pt)"));
+    SendMessageW(m_hComboFontSize, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"标准 (22pt)"));
+    SendMessageW(m_hComboFontSize, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"醒目大 (26pt)"));
+    SendMessageW(m_hComboFontSize, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"特大 (32pt)"));
+
+    // 时间颜色
+    HWND hLblCol = CreateWindowW(L"STATIC", L"文字颜色：", WS_CHILD | WS_VISIBLE, 476, 64, 75, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    SendMessage(hLblCol, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    m_hComboTextColor = CreateWindowW(
+        L"COMBOBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+        550, 61, 80, 200,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_COMBO_TEXT_COLOR), hInstance, nullptr
+    );
+    SendMessage(m_hComboTextColor, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"纯净白"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"浅金黄"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"荧光绿"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"冰川蓝"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"晚霞粉"));
+    SendMessageW(m_hComboTextColor, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"日落橙"));
+
+    // 始终置顶
+    m_hCheckAlwaysOnTop = CreateWindowW(
+        L"BUTTON", L"悬浮时钟始终保持在最前 (置顶显示)",
+        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        16, 94, 280, 20,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_CHECK_ALWAYS_ON_TOP), hInstance, nullptr
+    );
+    SendMessage(m_hCheckAlwaysOnTop, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    // ==========================================
+    // 2. 五分钟全屏休息设置
+    // ==========================================
+    HWND hSecBreak = CreateWindowW(L"STATIC", L"【五分钟全屏休息与视频】", WS_CHILD | WS_VISIBLE, 16, 126, 240, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    SendMessage(hSecBreak, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontSection), TRUE);
+
+    HWND hLblFinish = CreateWindowW(L"STATIC", L"学习结束后行为：", WS_CHILD | WS_VISIBLE, 16, 150, 110, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    SendMessage(hLblFinish, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    m_hRadioAutoBreak = CreateWindowW(
+        L"BUTTON", L"自动休息 (立即全屏休息)",
+        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
+        130, 148, 190, 20,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_RADIO_AUTO_BREAK), hInstance, nullptr
     );
     SendMessage(m_hRadioAutoBreak, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
@@ -365,16 +449,19 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     m_hRadioRemindBreak = CreateWindowW(
         L"BUTTON", L"提醒休息 (弹窗确认是否休息)",
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        370, 208, 180, 20,
+        330, 148, 220, 20,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_RADIO_REMIND_BREAK), hInstance, nullptr
     );
     SendMessage(m_hRadioRemindBreak, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
-    CreateWindowW(L"STATIC", L"自定义壁纸/视频：", WS_CHILD | WS_VISIBLE, 16, 246, 120, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    // 自定义壁纸/视频
+    HWND hLblMedia = CreateWindowW(L"STATIC", L"壁纸或视频文件：", WS_CHILD | WS_VISIBLE, 16, 178, 110, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    SendMessage(hLblMedia, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
     m_hEditMediaPath = CreateWindowExW(
         WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE,
-        140, 244, 300, 24,
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        130, 176, 400, 24,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_EDIT_MEDIA_PATH), hInstance, nullptr
     );
     SendMessage(m_hEditMediaPath, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
@@ -382,16 +469,19 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     m_hBtnBrowseMedia = CreateWindowW(
         L"BUTTON", L"浏览...",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        450, 242, 70, 28,
+        540, 174, 90, 28,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_BROWSE_MEDIA), hInstance, nullptr
     );
     SendMessage(m_hBtnBrowseMedia, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
-    CreateWindowW(L"STATIC", L"视频休息声音：", WS_CHILD | WS_VISIBLE, 16, 280, 120, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    // 视频声音
+    HWND hLblAudio = CreateWindowW(L"STATIC", L"视频休息声音：", WS_CHILD | WS_VISIBLE, 16, 208, 110, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    SendMessage(hLblAudio, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
     m_hRadioVideoMuted = CreateWindowW(
         L"BUTTON", L"静音播放 (推荐，安静休息)",
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        140, 278, 200, 20,
+        130, 206, 200, 20,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_RADIO_VIDEO_MUTED), hInstance, nullptr
     );
     SendMessage(m_hRadioVideoMuted, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
@@ -399,24 +489,72 @@ void ManagementWindow::CreateSettingsPage(HWND hWnd) {
     m_hRadioVideoAudio = CreateWindowW(
         L"BUTTON", L"保留声音 (原声播放)",
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        350, 278, 180, 20,
+        340, 206, 180, 20,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_RADIO_VIDEO_AUDIO), hInstance, nullptr
     );
     SendMessage(m_hRadioVideoAudio, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
 
+    // ==========================================
+    // 3. 专注类别管理
+    // ==========================================
+    HWND hSecCat = CreateWindowW(L"STATIC", L"【专注类别管理】", WS_CHILD | WS_VISIBLE, 16, 238, 200, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    SendMessage(hSecCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontSection), TRUE);
+
+    m_hListCategories = CreateWindowExW(
+        WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | LBS_NOTIFY | WS_VSCROLL,
+        16, 260, 260, 140,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_LIST_CATEGORIES), hInstance, nullptr
+    );
+    SendMessage(m_hListCategories, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    HWND hLblNewCat = CreateWindowW(L"STATIC", L"类别名称：", WS_CHILD | WS_VISIBLE, 290, 262, 80, 20, m_hPanelSettings, nullptr, hInstance, nullptr);
+    SendMessage(hLblNewCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    m_hEditNewCat = CreateWindowExW(
+        WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE,
+        370, 260, 260, 24,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_EDIT_NEW_CAT), hInstance, nullptr
+    );
+    SendMessage(m_hEditNewCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    m_hBtnAddCat = CreateWindowW(
+        L"BUTTON", L"添加新类别",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        370, 296, 120, 30,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_ADD_CAT), hInstance, nullptr
+    );
+    SendMessage(m_hBtnAddCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    m_hBtnRenameCat = CreateWindowW(
+        L"BUTTON", L"重命名选中类别",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        500, 296, 130, 30,
+        m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_RENAME_CAT), hInstance, nullptr
+    );
+    SendMessage(m_hBtnRenameCat, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFont), TRUE);
+
+    // ==========================================
+    // 4. 保存设置主按钮
+    // ==========================================
     m_hBtnSaveSettings = CreateWindowW(
-        L"BUTTON", L"保存设置",
+        L"BUTTON", L"★ 保存并应用所有设置",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        140, 320, 140, 34,
+        16, 420, 220, 36,
         m_hPanelSettings, reinterpret_cast<HMENU>(ID_BTN_SAVE_SETTINGS), hInstance, nullptr
     );
     SendMessage(m_hBtnSaveSettings, WM_SETFONT, reinterpret_cast<WPARAM>(m_hFontBold), TRUE);
 }
 
 void ManagementWindow::SwitchTab(int tabIndex) {
+    m_currentTabIndex = tabIndex;
     ShowWindow(m_hPanelStats, tabIndex == 0 ? SW_SHOW : SW_HIDE);
     ShowWindow(m_hPanelRecords, tabIndex == 1 ? SW_SHOW : SW_HIDE);
     ShowWindow(m_hPanelSettings, tabIndex == 2 ? SW_SHOW : SW_HIDE);
+
+    // 重新绘制顶层 Tab 按钮状态
+    InvalidateRect(m_hWnd, nullptr, TRUE);
 
     if (tabIndex == 0) RefreshStats();
     else if (tabIndex == 1) RefreshRecords();
@@ -447,7 +585,7 @@ void ManagementWindow::RefreshAll() {
 void ManagementWindow::RefreshStats() {
     StudyStatistics stats = Repository::Instance().GetOverallStatistics();
 
-    std::wstring todayStr = L"今日学习：" + FormatDuration(stats.todayDurationSeconds) +
+    std::wstring todayStr = L"今日专注：" + FormatDuration(stats.todayDurationSeconds) +
                            L" (" + std::to_wstring(stats.todayCount) + L"次)";
     SetWindowTextW(m_hStaticToday, todayStr.c_str());
 
@@ -455,7 +593,6 @@ void ManagementWindow::RefreshStats() {
                            L" (" + std::to_wstring(stats.totalCount) + L"次)";
     SetWindowTextW(m_hStaticTotal, totalStr.c_str());
 
-    // 刷新类别占比列表
     ListView_DeleteAllItems(m_hListCatStats);
     auto catStats = Repository::Instance().GetCategoryStatistics();
     for (size_t i = 0; i < catStats.size(); ++i) {
@@ -474,7 +611,6 @@ void ManagementWindow::RefreshStats() {
 }
 
 void ManagementWindow::RefreshRecords() {
-    // 刷新类别筛选框
     m_cachedCategories = Repository::Instance().GetAllCategories();
     int currentSel = static_cast<int>(SendMessage(m_hComboFilter, CB_GETCURSEL, 0, 0));
     int64_t currentFilterCatId = 0;
@@ -493,7 +629,6 @@ void ManagementWindow::RefreshRecords() {
     }
     SendMessage(m_hComboFilter, CB_SETCURSEL, newSel, 0);
 
-    // 查询记录列表
     ListView_DeleteAllItems(m_hListRecords);
     m_cachedRecords = Repository::Instance().GetRecords(currentFilterCatId, 300);
 
@@ -522,20 +657,56 @@ void ManagementWindow::RefreshRecords() {
 }
 
 void ManagementWindow::RefreshSettings() {
-    SendMessage(m_hListCategories, LB_RESETCONTENT, 0, 0);
-    m_cachedCategories = Repository::Instance().GetAllCategories();
-    for (const auto& cat : m_cachedCategories) {
-        SendMessageW(m_hListCategories, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(cat.name.c_str()));
-    }
-
     AppConfig config;
     Repository::Instance().LoadConfig(config);
 
+    // 1. 待机显示模式
+    SendMessage(m_hRadioIdleRealTime, BM_SETCHECK, config.showRealTimeWhenIdle ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessage(m_hRadioIdleDuration, BM_SETCHECK, !config.showRealTimeWhenIdle ? BST_CHECKED : BST_UNCHECKED, 0);
+
+    // 2. 透明度下拉
+    int opSel = 1;
+    if (config.clockOpacityPercent >= 95) opSel = 0;
+    else if (config.clockOpacityPercent >= 75) opSel = 1;
+    else if (config.clockOpacityPercent >= 55) opSel = 2;
+    else if (config.clockOpacityPercent >= 35) opSel = 3;
+    else if (config.clockOpacityPercent >= 10) opSel = 4;
+    else opSel = 5;
+    SendMessage(m_hComboOpacity, CB_SETCURSEL, opSel, 0);
+
+    // 3. 字号下拉
+    int fontSel = 1;
+    if (config.clockFontSize <= 18) fontSel = 0;
+    else if (config.clockFontSize <= 22) fontSel = 1;
+    else if (config.clockFontSize <= 26) fontSel = 2;
+    else fontSel = 3;
+    SendMessage(m_hComboFontSize, CB_SETCURSEL, fontSel, 0);
+
+    // 4. 文字颜色
+    int colSel = 0;
+    if (config.clockTextColor == "#FFE066") colSel = 1;
+    else if (config.clockTextColor == "#51CF66") colSel = 2;
+    else if (config.clockTextColor == "#339AF0") colSel = 3;
+    else if (config.clockTextColor == "#CC5DE8") colSel = 4;
+    else if (config.clockTextColor == "#FF922B") colSel = 5;
+    SendMessage(m_hComboTextColor, CB_SETCURSEL, colSel, 0);
+
+    // 5. 始终置顶
+    SendMessage(m_hCheckAlwaysOnTop, BM_SETCHECK, config.alwaysOnTop ? BST_CHECKED : BST_UNCHECKED, 0);
+
+    // 6. 休息设置
     SendMessage(m_hRadioAutoBreak, BM_SETCHECK, config.breakMode == BreakMode::Auto ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessage(m_hRadioRemindBreak, BM_SETCHECK, config.breakMode == BreakMode::Remind ? BST_CHECKED : BST_UNCHECKED, 0);
     SetWindowTextW(m_hEditMediaPath, config.customMediaPath.c_str());
     SendMessage(m_hRadioVideoMuted, BM_SETCHECK, config.videoMuted ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessage(m_hRadioVideoAudio, BM_SETCHECK, !config.videoMuted ? BST_CHECKED : BST_UNCHECKED, 0);
+
+    // 7. 类别列表
+    SendMessage(m_hListCategories, LB_RESETCONTENT, 0, 0);
+    m_cachedCategories = Repository::Instance().GetAllCategories();
+    for (const auto& cat : m_cachedCategories) {
+        SendMessageW(m_hListCategories, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(cat.name.c_str()));
+    }
 }
 
 void ManagementWindow::OnChangeRecordCategory() {
@@ -547,7 +718,6 @@ void ManagementWindow::OnChangeRecordCategory() {
 
     const auto& rec = m_cachedRecords[selIndex];
 
-    // 弹出快捷菜单让用户选择新类别
     HMENU hMenu = CreatePopupMenu();
     for (size_t i = 0; i < m_cachedCategories.size(); ++i) {
         AppendMenuW(hMenu, MF_STRING, 5000 + i, m_cachedCategories[i].name.c_str());
@@ -578,7 +748,7 @@ void ManagementWindow::OnDeleteRecord() {
 
     int ret = MessageBoxW(
         m_hWnd,
-        L"确定删除此记录吗？\n删除后其时长和次数将从所属类别及总体统计中同步扣除。",
+        L"确定删除此记录吗？\n删除后其时长和次数将从所属类别及总体统计中扣除。",
         L"确认删除",
         MB_YESNO | MB_ICONQUESTION
     );
@@ -639,7 +809,7 @@ void ManagementWindow::OnBrowseMedia() {
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(OPENFILENAMEW);
     ofn.hwndOwner = m_hWnd;
-    ofn.lpstrFilter = L"图片与视频文件\0*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.mp4;*.mkv;*.wmv\0所有文件\0*.*\0";
+    ofn.lpstrFilter = L"媒体与视频文件\0*.mp4;*.wmv;*.avi;*.mkv;*.mov;*.m4v;*.jpg;*.jpeg;*.png;*.bmp;*.webp\0所有文件\0*.*\0";
     ofn.lpstrFile = fileName;
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
@@ -653,6 +823,34 @@ void ManagementWindow::OnSaveSettings() {
     AppConfig config;
     Repository::Instance().LoadConfig(config);
 
+    // 1. 待机显示模式
+    config.showRealTimeWhenIdle = (SendMessage(m_hRadioIdleRealTime, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+    // 2. 透明度
+    int opacityIdx = static_cast<int>(SendMessage(m_hComboOpacity, CB_GETCURSEL, 0, 0));
+    const int opacities[] = { 100, 85, 65, 45, 20, 0 };
+    if (opacityIdx >= 0 && opacityIdx < 6) {
+        config.clockOpacityPercent = opacities[opacityIdx];
+    }
+
+    // 3. 字体大小
+    int fontIdx = static_cast<int>(SendMessage(m_hComboFontSize, CB_GETCURSEL, 0, 0));
+    const int fontSizes[] = { 18, 22, 26, 32 };
+    if (fontIdx >= 0 && fontIdx < 4) {
+        config.clockFontSize = fontSizes[fontIdx];
+    }
+
+    // 4. 文字颜色
+    int colorIdx = static_cast<int>(SendMessage(m_hComboTextColor, CB_GETCURSEL, 0, 0));
+    const char* const colors[] = { "#FFFFFF", "#FFE066", "#51CF66", "#339AF0", "#CC5DE8", "#FF922B" };
+    if (colorIdx >= 0 && colorIdx < 6) {
+        config.clockTextColor = colors[colorIdx];
+    }
+
+    // 5. 始终置顶
+    config.alwaysOnTop = (SendMessage(m_hCheckAlwaysOnTop, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+    // 6. 休息设置
     if (SendMessage(m_hRadioAutoBreak, BM_GETCHECK, 0, 0) == BST_CHECKED) {
         config.breakMode = BreakMode::Auto;
     } else {
@@ -664,8 +862,13 @@ void ManagementWindow::OnSaveSettings() {
     config.customMediaPath = buf;
     config.videoMuted = (SendMessage(m_hRadioVideoMuted, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
+    // 持久化保存
     Repository::Instance().SaveConfig(config);
-    MessageBoxW(m_hWnd, L"设置保存成功！", L"成功", MB_OK | MB_ICONINFORMATION);
+
+    // 立即生效到悬浮时钟
+    FloatingClock::Instance().ApplyConfig(config);
+
+    MessageBoxW(m_hWnd, L"设置已成功保存并立即应用！", L"设置成功", MB_OK | MB_ICONINFORMATION);
 }
 
 LRESULT CALLBACK ManagementWindow::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -686,44 +889,60 @@ LRESULT CALLBACK ManagementWindow::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, 
 
 LRESULT ManagementWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
-    case WM_NOTIFY: {
-        auto nmhdr = reinterpret_cast<NMHDR*>(lParam);
-        if (nmhdr->idFrom == ID_TAB_CONTROL && nmhdr->code == TCN_SELCHANGE) {
-            int sel = TabCtrl_GetCurSel(m_hTab);
-            SwitchTab(sel);
-            return 0;
-        }
-        break;
+    case WM_CTLCOLORDLG: {
+        return reinterpret_cast<INT_PTR>(m_hBrushBg);
+    }
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(230, 235, 245));
+        return reinterpret_cast<INT_PTR>(m_hBrushCard);
+    }
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        SetTextColor(hdc, RGB(245, 247, 250));
+        SetBkColor(hdc, RGB(38, 42, 54));
+        return reinterpret_cast<INT_PTR>(m_hBrushInput);
+    }
+    case WM_CTLCOLORBTN: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(230, 235, 245));
+        return reinterpret_cast<INT_PTR>(m_hBrushCard);
     }
     case WM_COMMAND: {
-        int id = LOWORD(wParam);
-        int code = HIWORD(wParam);
+        WORD id = LOWORD(wParam);
+        WORD code = HIWORD(wParam);
 
-        if (id == ID_LIST_CATEGORIES && code == LBN_SELCHANGE) {
-            int sel = static_cast<int>(SendMessage(m_hListCategories, LB_GETCURSEL, 0, 0));
-            if (sel >= 0 && sel < static_cast<int>(m_cachedCategories.size())) {
-                SetWindowTextW(m_hEditNewCat, m_cachedCategories[sel].name.c_str());
-            }
+        if (id == ID_TAB_STATS) {
+            SwitchTab(0);
+            return 0;
+        } else if (id == ID_TAB_RECORDS) {
+            SwitchTab(1);
+            return 0;
+        } else if (id == ID_TAB_SETTINGS) {
+            SwitchTab(2);
             return 0;
         } else if (id == ID_COMBO_FILTER && code == CBN_SELCHANGE) {
             RefreshRecords();
             return 0;
-        } else if (id == ID_BTN_CHANGE_CAT && code == BN_CLICKED) {
+        } else if (id == ID_BTN_CHANGE_CAT) {
             OnChangeRecordCategory();
             return 0;
-        } else if (id == ID_BTN_DELETE_RECORD && code == BN_CLICKED) {
+        } else if (id == ID_BTN_DELETE_RECORD) {
             OnDeleteRecord();
             return 0;
-        } else if (id == ID_BTN_ADD_CAT && code == BN_CLICKED) {
+        } else if (id == ID_BTN_ADD_CAT) {
             OnAddCategory();
             return 0;
-        } else if (id == ID_BTN_RENAME_CAT && code == BN_CLICKED) {
+        } else if (id == ID_BTN_RENAME_CAT) {
             OnRenameCategory();
             return 0;
-        } else if (id == ID_BTN_BROWSE_MEDIA && code == BN_CLICKED) {
+        } else if (id == ID_BTN_BROWSE_MEDIA) {
             OnBrowseMedia();
             return 0;
-        } else if (id == ID_BTN_SAVE_SETTINGS && code == BN_CLICKED) {
+        } else if (id == ID_BTN_SAVE_SETTINGS) {
             OnSaveSettings();
             return 0;
         }

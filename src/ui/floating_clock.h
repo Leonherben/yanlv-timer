@@ -27,6 +27,7 @@ public:
     bool IsAlwaysOnTop() const { return m_alwaysOnTop; }
 
     void UpdateDisplay(int64_t remainingSeconds, TimerState state);
+    void ApplyConfig(const AppConfig& config);
 
     HWND GetHwnd() const { return m_hWnd; }
 
@@ -43,14 +44,21 @@ private:
     LRESULT HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
     void Render();
+    void RecreateBitmapAndTarget(int width, int height);
     void ShowContextMenu(int screenX, int screenY);
 
     HWND m_hWnd = nullptr;
-    int m_width = 170;
+    int m_width = 172;
     int m_height = 54;
     int m_posX = 120;
     int m_posY = 120;
     bool m_alwaysOnTop = true;
+
+    // 个性化配置状态
+    int m_opacityPercent = 85;
+    int m_fontSize = 22;
+    std::string m_textColorHex = "#FFFFFF";
+    bool m_showRealTimeWhenIdle = true;
 
     // 绘制资源
     HDC m_memDC = nullptr;

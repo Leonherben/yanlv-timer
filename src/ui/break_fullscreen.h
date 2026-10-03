@@ -5,6 +5,8 @@
 #include <unknwn.h>
 #include <cstdint>
 #include <dshow.h>
+#include <mfapi.h>
+#include <mfmediaengine.h>
 #include <d2d1.h>
 #include <d2d1helper.h>
 #include <dwrite.h>
@@ -57,7 +59,11 @@ private:
     bool m_isHoveringSkip = false;
     D2D1_RECT_F m_skipBtnRect{};
 
-    // DirectShow 视频播放
+    // Media Foundation 硬件加速视频播放
+    IMFMediaEngine* m_mediaEngine = nullptr;
+    IMFMediaEngineNotify* m_mediaNotify = nullptr;
+
+    // DirectShow 视频播放 (向下兼容回退)
     IGraphBuilder* m_graphBuilder = nullptr;
     IMediaControl* m_mediaControl = nullptr;
     IVideoWindow* m_videoWindow = nullptr;

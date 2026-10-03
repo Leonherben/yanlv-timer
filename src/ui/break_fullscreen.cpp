@@ -26,6 +26,33 @@ bool IsVideoFile(const std::wstring& path) {
             ext == L".mkv" || ext == L".mov" || ext == L".m4v" ||
             ext == L".webm" || ext == L".flv" || ext == L".mpg" || ext == L".mpeg");
 }
+
+class BreakMediaEngineNotify : public IMFMediaEngineNotify {
+    long m_cRef = 1;
+public:
+    BreakMediaEngineNotify() = default;
+    virtual ~BreakMediaEngineNotify() = default;
+    STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) return E_POINTER;
+        if (riid == IID_IMFMediaEngineNotify || riid == IID_IUnknown) {
+            *ppv = static_cast<IMFMediaEngineNotify*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&m_cRef); }
+    STDMETHODIMP_(ULONG) Release() override {
+        LONG c = InterlockedDecrement(&m_cRef);
+        if (c == 0) delete this;
+        return c;
+    }
+    STDMETHODIMP EventNotify(DWORD event, DWORD_PTR param1, DWORD param2) override {
+        (void)event; (void)param1; (void)param2;
+        return S_OK;
+    }
+};
 } // namespace
 
 BreakFullscreen& BreakFullscreen::Instance() {
@@ -130,7 +157,69 @@ bool BreakFullscreen::ShowBreak(const std::wstring& mediaPath, bool videoMuted) 
 }
 
 bool BreakFullscreen::PlayVideoFile(const std::wstring& filePath, bool isMuted) {
+    // 1. 优先使用 Windows 10/11 原生硬件加速 Media Foundation (IMFMediaEngine)
+    // 原生支持 mp4, wmv, avi, mkv, mov 等现代视频格式，无需系统预装任何第三方滤镜
+    MFStartup(MF_VERSION);
+
+    IMFMediaEngineClassFactory* pFactory = nullptr;
     HRESULT hr = CoCreateInstance(
+        CLSID_MFMediaEngineClassFactory, nullptr, CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(&pFactory)
+    );
+
+    if (SUCCEEDED(hr) && pFactory) {
+        IMFAttributes* pAttr = nullptr;
+        hr = MFCreateAttributes(&pAttr, 2);
+        if (SUCCEEDED(hr) && pAttr) {
+            pAttr->SetUINT64(MF_MEDIA_ENGINE_PLAYBACK_HWND, reinterpret_cast<UINT64>(m_hWnd));
+            m_mediaNotify = new BreakMediaEngineNotify();
+            pAttr->SetUnknown(MF_MEDIA_ENGINE_CALLBACK, m_mediaNotify);
+
+            hr = pFactory->CreateInstance(0, pAttr, &m_mediaEngine);
+            pAttr->Release();
+        }
+        pFactory->Release();
+
+        if (SUCCEEDED(hr) && m_mediaEngine) {
+            m_mediaEngine->SetLoop(TRUE);
+            m_mediaEngine->SetMuted(isMuted ? TRUE : FALSE);
+
+            BSTR bstrSource = SysAllocString(filePath.c_str());
+            hr = m_mediaEngine->SetSource(bstrSource);
+            SysFreeString(bstrSource);
+
+            if (SUCCEEDED(hr)) {
+                m_mediaEngine->Load();
+
+                // 更新视频渲染视口并自动 Letterbox 居中保持宽高比
+                IMFMediaEngineEx* pEngineEx = nullptr;
+                if (SUCCEEDED(m_mediaEngine->QueryInterface(IID_PPV_ARGS(&pEngineEx)))) {
+                    RECT rcDst{0, 0, m_screenWidth, m_screenHeight};
+                    MFARGB borderClr{0, 0, 0, 255};
+                    pEngineEx->UpdateVideoStream(nullptr, &rcDst, &borderClr);
+                    pEngineEx->Release();
+                }
+
+                m_mediaEngine->Play();
+                m_isVideoPlaying = true;
+                SetupVideoOverlay();
+                return true;
+            } else {
+                if (m_mediaEngine) {
+                    m_mediaEngine->Shutdown();
+                    m_mediaEngine->Release();
+                    m_mediaEngine = nullptr;
+                }
+                if (m_mediaNotify) {
+                    m_mediaNotify->Release();
+                    m_mediaNotify = nullptr;
+                }
+            }
+        }
+    }
+
+    // 2. 如果 MediaEngine 失败，回退到 DirectShow 兼容模式
+    hr = CoCreateInstance(
         CLSID_FilterGraph, nullptr, CLSCTX_INPROC_SERVER,
         IID_IGraphBuilder, reinterpret_cast<void**>(&m_graphBuilder)
     );
@@ -311,6 +400,17 @@ bool BreakFullscreen::LoadImageFile(const std::wstring& filePath) {
 }
 
 void BreakFullscreen::ReleaseMediaResources() {
+    if (m_mediaEngine) {
+        m_mediaEngine->Pause();
+        m_mediaEngine->Shutdown();
+        m_mediaEngine->Release();
+        m_mediaEngine = nullptr;
+    }
+    if (m_mediaNotify) {
+        m_mediaNotify->Release();
+        m_mediaNotify = nullptr;
+    }
+
     if (m_mediaEvent) {
         m_mediaEvent->SetNotifyWindow(reinterpret_cast<OAHWND>(nullptr), 0, 0);
         m_mediaEvent->Release();

@@ -471,17 +471,15 @@ bool Repository::LoadConfig(AppConfig& config) {
             else if (sKey == "clock_y") config.clockPosY = std::stoi(sVal);
             else if (sKey == "always_on_top") config.alwaysOnTop = (sVal == "1");
             else if (sKey == "clock_opacity") config.clockOpacityPercent = std::stoi(sVal);
+            else if (sKey == "clock_font_size") config.clockFontSize = std::stoi(sVal);
             else if (sKey == "clock_text_color") {
                 config.clockTextColor = sVal;
-                if (config.clockTextColor == "#FFFFFF" || config.clockTextColor.empty()) {
-                    config.clockTextColor = "#0F172A";
-                }
             }
             else if (sKey == "show_real_time") config.showRealTimeWhenIdle = (sVal == "1");
         }
         sqlite3_finalize(stmt);
     }
-    if (config.clockTextColor == "#FFFFFF" || config.clockTextColor.empty()) {
+    if (config.clockTextColor.empty()) {
         config.clockTextColor = "#0F172A";
     }
     return true;
@@ -491,14 +489,16 @@ bool Repository::SaveConfig(const AppConfig& config) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_db) return false;
 
+    sqlite3_exec(m_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
+
     auto upsertSetting = [this](const std::string& key, const std::string& val) {
         const char* sql = 
             "INSERT INTO settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
-            sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 2, val.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 2, val.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_step(stmt);
             sqlite3_finalize(stmt);
         }
@@ -516,6 +516,38 @@ bool Repository::SaveConfig(const AppConfig& config) {
     upsertSetting("clock_font_size", std::to_string(config.clockFontSize));
     upsertSetting("clock_text_color", config.clockTextColor);
     upsertSetting("show_real_time", config.showRealTimeWhenIdle ? "1" : "0");
+
+    sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
+    sqlite3_wal_checkpoint_v2(m_db, nullptr, SQLITE_CHECKPOINT_PASSIVE, nullptr, nullptr);
+
+    return true;
+}
+
+bool Repository::SaveClockPosition(int x, int y, bool alwaysOnTop) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_db) return false;
+
+    sqlite3_exec(m_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
+
+    auto upsertSetting = [this](const std::string& key, const std::string& val) {
+        const char* sql = 
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 2, val.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    };
+
+    upsertSetting("clock_x", std::to_string(x));
+    upsertSetting("clock_y", std::to_string(y));
+    upsertSetting("always_on_top", alwaysOnTop ? "1" : "0");
+
+    sqlite3_exec(m_db, "COMMIT;", nullptr, nullptr, nullptr);
+    sqlite3_wal_checkpoint_v2(m_db, nullptr, SQLITE_CHECKPOINT_PASSIVE, nullptr, nullptr);
 
     return true;
 }

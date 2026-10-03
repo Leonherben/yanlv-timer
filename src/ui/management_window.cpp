@@ -882,6 +882,12 @@ void ManagementWindow::OnSaveSettings() {
     config.customMediaPath = buf;
     config.videoMuted = (SendMessage(m_hRadioVideoMuted, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
+    // 保持当前时钟实时坐标
+    int curX, curY;
+    FloatingClock::Instance().GetPosition(curX, curY);
+    config.clockPosX = curX;
+    config.clockPosY = curY;
+
     // 持久化保存
     Repository::Instance().SaveConfig(config);
 

@@ -41,6 +41,7 @@ public:
     // 应用配置
     bool LoadConfig(AppConfig& config);
     bool SaveConfig(const AppConfig& config);
+    bool SaveClockPosition(int x, int y, bool alwaysOnTop);
 
 private:
     Repository() = default;

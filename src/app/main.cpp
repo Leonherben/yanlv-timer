@@ -273,13 +273,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         DispatchMessageW(&msg);
     }
 
-    // 13. 程序正常退出前保存状态
+    // 13. 程序正常退出前仅保存时钟坐标与置顶状态 (绝不覆盖用户通过控制中心保存的各项个性化设置)
     int saveX, saveY;
     clock.GetPosition(saveX, saveY);
-    config.clockPosX = saveX;
-    config.clockPosY = saveY;
-    config.alwaysOnTop = clock.IsAlwaysOnTop();
-    yanlv::Repository::Instance().SaveConfig(config);
+    yanlv::Repository::Instance().SaveClockPosition(saveX, saveY, clock.IsAlwaysOnTop());
 
     // 14. 资源清理
     yanlv::TrayIcon::Instance().Remove();

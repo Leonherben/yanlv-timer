@@ -207,6 +207,68 @@ bool TestTimerEngineLifecycle() {
     return true;
 }
 
+bool TestConfigPersistenceAndClockPosition() {
+    std::cout << "[RUN] Testing Config Persistence and Independent Clock Position Saving..." << std::endl;
+    std::wstring testDb = L"test_config.db";
+    if (fs::exists("test_config.db")) fs::remove("test_config.db");
+
+    auto& repo = yanlv::Repository::Instance();
+    TEST_ASSERT(repo.Initialize(testDb), "Failed to initialize test DB for config");
+
+    yanlv::AppConfig c1;
+    c1.breakMode = yanlv::BreakMode::Auto;
+    c1.lastDurationSeconds = 1800;
+    c1.lastCategoryId = 2;
+    c1.customMediaPath = L"C:\\test\\video.mp4";
+    c1.videoMuted = false;
+    c1.clockPosX = 250;
+    c1.clockPosY = 350;
+    c1.alwaysOnTop = false;
+    c1.clockOpacityPercent = 45;
+    c1.clockFontSize = 32;
+    c1.clockTextColor = "#2563EB";
+    c1.showRealTimeWhenIdle = false;
+
+    TEST_ASSERT(repo.SaveConfig(c1), "SaveConfig failed");
+
+    yanlv::AppConfig cLoaded;
+    TEST_ASSERT(repo.LoadConfig(cLoaded), "LoadConfig failed");
+    TEST_ASSERT(cLoaded.breakMode == yanlv::BreakMode::Auto, "breakMode mismatch");
+    TEST_ASSERT(cLoaded.lastDurationSeconds == 1800, "lastDurationSeconds mismatch");
+    TEST_ASSERT(cLoaded.lastCategoryId == 2, "lastCategoryId mismatch");
+    TEST_ASSERT(cLoaded.customMediaPath == L"C:\\test\\video.mp4", "customMediaPath mismatch");
+    TEST_ASSERT(cLoaded.videoMuted == false, "videoMuted mismatch");
+    TEST_ASSERT(cLoaded.clockPosX == 250, "clockPosX mismatch");
+    TEST_ASSERT(cLoaded.clockPosY == 350, "clockPosY mismatch");
+    TEST_ASSERT(cLoaded.alwaysOnTop == false, "alwaysOnTop mismatch");
+    TEST_ASSERT(cLoaded.clockOpacityPercent == 45, "clockOpacityPercent mismatch");
+    TEST_ASSERT(cLoaded.clockFontSize == 32, "clockFontSize mismatch");
+    TEST_ASSERT(cLoaded.clockTextColor == "#2563EB", "clockTextColor mismatch");
+    TEST_ASSERT(cLoaded.showRealTimeWhenIdle == false, "showRealTimeWhenIdle mismatch");
+
+    // 测试仅更新坐标与置顶，确保其他所有设置完全不受影响
+    TEST_ASSERT(repo.SaveClockPosition(600, 700, true), "SaveClockPosition failed");
+
+    yanlv::AppConfig cAfterPos;
+    TEST_ASSERT(repo.LoadConfig(cAfterPos), "LoadConfig after SaveClockPosition failed");
+    TEST_ASSERT(cAfterPos.clockPosX == 600, "Updated clockPosX mismatch");
+    TEST_ASSERT(cAfterPos.clockPosY == 700, "Updated clockPosY mismatch");
+    TEST_ASSERT(cAfterPos.alwaysOnTop == true, "Updated alwaysOnTop mismatch");
+    // 关键断言：其他个性化设置绝不被覆盖或倒退
+    TEST_ASSERT(cAfterPos.breakMode == yanlv::BreakMode::Auto, "breakMode should remain Auto");
+    TEST_ASSERT(cAfterPos.customMediaPath == L"C:\\test\\video.mp4", "customMediaPath should remain unchanged");
+    TEST_ASSERT(cAfterPos.videoMuted == false, "videoMuted should remain false");
+    TEST_ASSERT(cAfterPos.clockOpacityPercent == 45, "clockOpacityPercent should remain 45");
+    TEST_ASSERT(cAfterPos.clockFontSize == 32, "clockFontSize should remain 32");
+    TEST_ASSERT(cAfterPos.clockTextColor == "#2563EB", "clockTextColor should remain #2563EB");
+    TEST_ASSERT(cAfterPos.showRealTimeWhenIdle == false, "showRealTimeWhenIdle should remain false");
+
+    repo.Close();
+    if (fs::exists("test_config.db")) fs::remove("test_config.db");
+    std::cout << "[PASS] Config Persistence and Independent Clock Position Saving passed!" << std::endl;
+    return true;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "   言律时钟 (Yanlv-timer) 本地核心测试   " << std::endl;
@@ -216,9 +278,10 @@ int main() {
     if (!TestRecordsAndStatistics()) return 1;
     if (!TestHeartbeatAndCrashRecovery()) return 1;
     if (!TestTimerEngineLifecycle()) return 1;
+    if (!TestConfigPersistenceAndClockPosition()) return 1;
 
     std::cout << "========================================" << std::endl;
-    std::cout << "   ALL TESTS PASSED SUCCESSFULLY! (4/4) " << std::endl;
+    std::cout << "   ALL TESTS PASSED SUCCESSFULLY! (5/5) " << std::endl;
     std::cout << "========================================" << std::endl;
     return 0;
 }

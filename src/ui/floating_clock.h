@@ -82,8 +82,9 @@ private:
     std::wstring m_timeString = L"25:00";
     std::wstring m_statusString = L"待开始";
 
-    // 鼠标点击判断
-    POINT m_mouseDownPos{0, 0};
+    // 鼠标拖拽与点击判断
+    POINT m_dragStartCursor{0, 0};
+    POINT m_dragStartWindowPos{0, 0};
     bool m_isDragging = false;
 
     std::function<void()> m_onQuickStart;

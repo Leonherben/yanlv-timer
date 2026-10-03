@@ -395,7 +395,7 @@ void FloatingClock::ApplyConfig(const AppConfig& config) {
     m_opacityPercent = config.clockOpacityPercent;
     m_fontSize = config.clockFontSize;
     m_textColorHex = config.clockTextColor;
-    if (m_textColorHex.empty() || m_textColorHex == "#FFFFFF") {
+    if (m_textColorHex.empty()) {
         m_textColorHex = "#0F172A"; // 极简白主题下默认高对比曜石黑
     }
     m_showRealTimeWhenIdle = config.showRealTimeWhenIdle;
@@ -459,6 +459,7 @@ void FloatingClock::ShowContextMenu(int screenX, int screenY) {
         break;
     case ID_MENU_ALWAYS_TOP:
         SetAlwaysOnTop(!m_alwaysOnTop);
+        Repository::Instance().SaveClockPosition(m_posX, m_posY, m_alwaysOnTop);
         break;
     case ID_MENU_HIDE:
         Hide();
@@ -509,32 +510,26 @@ LRESULT FloatingClock::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
         return MA_NOACTIVATE;
     }
     case WM_LBUTTONDOWN: {
-        m_mouseDownPos.x = GET_X_LPARAM(lParam);
-        m_mouseDownPos.y = GET_Y_LPARAM(lParam);
+        GetCursorPos(&m_dragStartCursor);
+        m_dragStartWindowPos.x = m_posX;
+        m_dragStartWindowPos.y = m_posY;
         m_isDragging = false;
         SetCapture(hWnd);
         return 0;
     }
     case WM_MOUSEMOVE: {
         if (GetCapture() == hWnd) {
-            int curX = GET_X_LPARAM(lParam);
-            int curY = GET_Y_LPARAM(lParam);
-            int dx = curX - m_mouseDownPos.x;
-            int dy = curY - m_mouseDownPos.y;
-            if (abs(dx) > 2 || abs(dy) > 2) {
+            POINT curPt;
+            GetCursorPos(&curPt);
+            int dx = curPt.x - m_dragStartCursor.x;
+            int dy = curPt.y - m_dragStartCursor.y;
+            if (!m_isDragging && (abs(dx) > 3 || abs(dy) > 3)) {
                 m_isDragging = true;
-                m_posX += dx;
-                m_posY += dy;
-
-                // 限制在当前监视器屏幕边界内，但允许贴合覆盖任务栏区域
-                HMONITOR hMon = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-                MONITORINFO mi{};
-                mi.cbSize = sizeof(MONITORINFO);
-                if (GetMonitorInfoW(hMon, &mi)) {
-                    m_posX = (std::max)(static_cast<int>(mi.rcMonitor.left), (std::min)(static_cast<int>(mi.rcMonitor.right - m_width), m_posX));
-                    m_posY = (std::max)(static_cast<int>(mi.rcMonitor.top), (std::min)(static_cast<int>(mi.rcMonitor.bottom - m_height), m_posY));
-                }
-
+            }
+            if (m_isDragging) {
+                m_posX = m_dragStartWindowPos.x + dx;
+                m_posY = m_dragStartWindowPos.y + dy;
+                // 允许自由拖出界、跨屏、贴合边角 (越界自由摆放)
                 SetPosition(m_posX, m_posY);
             }
         }
@@ -543,7 +538,10 @@ LRESULT FloatingClock::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
     case WM_LBUTTONUP: {
         if (GetCapture() == hWnd) {
             ReleaseCapture();
-            if (!m_isDragging) {
+            if (m_isDragging) {
+                m_isDragging = false;
+                Repository::Instance().SaveClockPosition(m_posX, m_posY, m_alwaysOnTop);
+            } else {
                 // 单击响应逻辑
                 TimerState st = TimerEngine::Instance().GetState();
                 if (st == TimerState::Idle) {

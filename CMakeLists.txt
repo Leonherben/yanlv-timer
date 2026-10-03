@@ -17,11 +17,10 @@ if(MSVC)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/W3>)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/permissive->)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus>)
-    add_link_options(/SUBSYSTEM:WINDOWS)
 else()
     # MinGW / GCC 配置
     add_compile_options(-Wall -Wextra -O3)
-    add_link_options(-mwindows -static -static-libgcc -static-libstdc++)
+    add_link_options(-static -static-libgcc -static-libstdc++)
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})

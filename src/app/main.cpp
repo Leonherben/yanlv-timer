@@ -188,6 +188,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     clock.SetAlwaysOnTop(config.alwaysOnTop);
     clock.Create();
     clock.Show();
+    clock.UpdateDisplay(config.lastDurationSeconds, yanlv::TimerState::Idle);
 
     // 9. 连接交互回调
     clock.SetOnQuickStartRequested([&]() {

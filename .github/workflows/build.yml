@@ -9,6 +9,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -42,17 +45,40 @@ jobs:
         name: build-log
         path: build_output.txt
 
+    - name: Package Release
+      if: success()
+      run: |
+        New-Item -ItemType Directory -Path release_pkg -Force
+        if (Test-Path "build/bin/Release/YanlvTimer.exe") {
+          Copy-Item "build/bin/Release/YanlvTimer.exe" -Destination "release_pkg/YanlvTimer.exe"
+        } elseif (Test-Path "build/bin/YanlvTimer.exe") {
+          Copy-Item "build/bin/YanlvTimer.exe" -Destination "release_pkg/YanlvTimer.exe"
+        } else {
+          Copy-Item (Get-ChildItem -Recurse -Filter "YanlvTimer.exe").FullName[0] -Destination "release_pkg/YanlvTimer.exe"
+        }
+        if (Test-Path "assets") {
+          Copy-Item -Recurse -Path "assets" -Destination "release_pkg/assets"
+        }
+        Compress-Archive -Path "release_pkg/*" -DestinationPath "YanlvTimer-windows-x64.zip" -Force
+
     - name: Upload Artifact
       if: success()
       uses: actions/upload-artifact@v4
       with:
         name: YanlvTimer-windows-x64
-        path: build/bin/**/YanlvTimer.exe
+        path: YanlvTimer-windows-x64.zip
 
-    - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/')
+    - name: Publish GitHub Release
+      if: success() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
       uses: softprops/action-gh-release@v2
       with:
-        files: build/bin/**/YanlvTimer.exe
+        tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}
+        name: ${{ startsWith(github.ref, 'refs/tags/') && format('言律时钟 {0}', github.ref_name) || '言律时钟 v1.0.0' }}
+        files: |
+          YanlvTimer-windows-x64.zip
+          release_pkg/YanlvTimer.exe
+        draft: false
+        prerelease: false
+        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

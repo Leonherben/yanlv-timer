@@ -60,6 +60,20 @@ target_link_libraries(YanlvTimer PRIVATE
     mfreadwrite
 )
 
+# 单元测试目标
+option(BUILD_TESTS "Build test suite" ON)
+if(BUILD_TESTS)
+    add_executable(test_core
+        src/db/sqlite3.c
+        src/db/repository.cpp
+        src/core/timer_engine.cpp
+        tests/test_main.cpp
+    )
+    target_link_libraries(test_core PRIVATE
+        shlwapi
+    )
+endif()
+
 # 安装与发布配置
 install(TARGETS YanlvTimer DESTINATION .)
 install(DIRECTORY assets DESTINATION .)

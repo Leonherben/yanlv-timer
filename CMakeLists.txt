@@ -13,7 +13,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # MSVC 静态运行时链接 (/MT)，完全摆脱外部 VC 运行库依赖
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    add_compile_options(/utf-8 $<$<COMPILE_LANGUAGE:CXX>:/W3 /permissive- /Zc:__cplusplus>)
+    add_compile_options(/utf-8)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/W3>)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/permissive->)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus>)
     add_link_options(/SUBSYSTEM:WINDOWS)
 else()
     # MinGW / GCC 配置

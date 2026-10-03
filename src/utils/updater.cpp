@@ -9,7 +9,7 @@
 namespace yanlv {
 
 namespace {
-const wchar_t* const VERSION_STRING = L"v1.0.1";
+const wchar_t* const VERSION_STRING = L"v1.1.0";
 const char* const GITHUB_REPO_HOST = "api.github.com";
 const wchar_t* const GITHUB_REPO_HOST_W = L"api.github.com";
 const wchar_t* const GITHUB_RELEASES_API_PATH = L"/repos/Leonherben/yanlv-timer/releases/latest";

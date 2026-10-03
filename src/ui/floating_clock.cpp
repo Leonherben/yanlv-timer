@@ -1,5 +1,6 @@
 #include "src/ui/floating_clock.h"
 #include "src/ui/d2d_renderer.h"
+#include "src/ui/modern_menu.h"
 #include "src/core/timer_engine.h"
 #include "src/db/repository.h"
 #include "src/utils/updater.h"
@@ -16,6 +17,7 @@ enum MenuCommand {
     ID_MENU_START = 1001,
     ID_MENU_PAUSE_RESUME,
     ID_MENU_ABORT,
+    ID_MENU_CANCEL,
     ID_MENU_HIDE,
     ID_MENU_MANAGEMENT,
     ID_MENU_ALWAYS_TOP,
@@ -415,32 +417,32 @@ void FloatingClock::ApplyConfig(const AppConfig& config) {
 }
 
 void FloatingClock::ShowContextMenu(int screenX, int screenY) {
-    HMENU hMenu = CreatePopupMenu();
+    std::vector<ModernMenuItem> items;
     TimerState st = TimerEngine::Instance().GetState();
 
     if (st == TimerState::Idle) {
-        AppendMenuW(hMenu, MF_STRING, ID_MENU_START, L"开始学习 (Enter)");
+        items.push_back(ModernMenuItem::Item(ID_MENU_START, L"开始专注"));
     } else if (st == TimerState::Studying) {
-        AppendMenuW(hMenu, MF_STRING, ID_MENU_PAUSE_RESUME, L"暂停学习 (Space)");
-        AppendMenuW(hMenu, MF_STRING, ID_MENU_ABORT, L"提前结束本轮");
+        items.push_back(ModernMenuItem::Item(ID_MENU_PAUSE_RESUME, L"暂停专注"));
+        items.push_back(ModernMenuItem::Item(ID_MENU_ABORT, L"提前结束 (计入记录)"));
+        items.push_back(ModernMenuItem::Item(ID_MENU_CANCEL, L"取消学习 (不计入记录)", false, true));
     } else if (st == TimerState::Paused) {
-        AppendMenuW(hMenu, MF_STRING, ID_MENU_PAUSE_RESUME, L"继续学习 (Space)");
-        AppendMenuW(hMenu, MF_STRING, ID_MENU_ABORT, L"提前结束本轮");
+        items.push_back(ModernMenuItem::Item(ID_MENU_PAUSE_RESUME, L"继续专注"));
+        items.push_back(ModernMenuItem::Item(ID_MENU_ABORT, L"提前结束 (计入记录)"));
+        items.push_back(ModernMenuItem::Item(ID_MENU_CANCEL, L"取消学习 (不计入记录)", false, true));
     } else if (st == TimerState::Breaking) {
-        AppendMenuW(hMenu, MF_STRING, ID_MENU_ABORT, L"结束本次休息");
+        items.push_back(ModernMenuItem::Item(ID_MENU_ABORT, L"结束本次休息"));
     }
 
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(hMenu, MF_STRING, ID_MENU_MANAGEMENT, L"控制中心 (统计与记录)...");
-    AppendMenuW(hMenu, MF_STRING, ID_MENU_CHECK_UPDATE, L"检查更新...");
-    AppendMenuW(hMenu, MF_STRING | (m_alwaysOnTop ? MF_CHECKED : MF_UNCHECKED), ID_MENU_ALWAYS_TOP, L"窗口置顶");
-    AppendMenuW(hMenu, MF_STRING, ID_MENU_HIDE, L"隐藏时钟 (可在托盘唤醒)");
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(hMenu, MF_STRING, ID_MENU_EXIT, L"退出言律时钟");
+    items.push_back(ModernMenuItem::Separator());
+    items.push_back(ModernMenuItem::Item(ID_MENU_MANAGEMENT, L"控制中心"));
+    items.push_back(ModernMenuItem::Item(ID_MENU_CHECK_UPDATE, L"检查更新"));
+    items.push_back(ModernMenuItem::Item(ID_MENU_ALWAYS_TOP, L"窗口置顶", m_alwaysOnTop));
+    items.push_back(ModernMenuItem::Item(ID_MENU_HIDE, L"隐藏时钟 (可在托盘唤醒)"));
+    items.push_back(ModernMenuItem::Separator());
+    items.push_back(ModernMenuItem::Item(ID_MENU_EXIT, L"退出言律时钟"));
 
-    SetForegroundWindow(m_hWnd);
-    int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON, screenX, screenY, 0, m_hWnd, nullptr);
-    DestroyMenu(hMenu);
+    int cmd = ModernMenu::Show(m_hWnd, screenX, screenY, items);
 
     switch (cmd) {
     case ID_MENU_START:
@@ -456,6 +458,9 @@ void FloatingClock::ShowContextMenu(int screenX, int screenY) {
         } else {
             TimerEngine::Instance().Abort();
         }
+        break;
+    case ID_MENU_CANCEL:
+        TimerEngine::Instance().CancelStudy();
         break;
     case ID_MENU_MANAGEMENT:
         if (m_onOpenManagement) m_onOpenManagement();
@@ -566,6 +571,17 @@ LRESULT FloatingClock::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
         GetCursorPos(&pt);
         ShowContextMenu(pt.x, pt.y);
         return 0;
+    }
+    case WM_COMMAND: {
+        WORD id = LOWORD(wParam);
+        if (id == ID_MENU_MANAGEMENT) {
+            if (m_onOpenManagement) m_onOpenManagement();
+            return 0;
+        } else if (id == ID_MENU_START) {
+            if (m_onQuickStart) m_onQuickStart();
+            return 0;
+        }
+        break;
     }
     }
     return DefWindowProc(hWnd, uMsg, wParam, lParam);

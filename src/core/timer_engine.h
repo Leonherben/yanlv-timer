@@ -25,7 +25,8 @@ public:
     bool StartStudy(int64_t categoryId, int64_t durationSeconds);
     bool Pause();
     bool Resume();
-    bool Abort();                                // 提前结束
+    bool Abort();                                // 提前结束 (计入实际时长)
+    bool CancelStudy();                          // 取消学习 (不计入历史记录)
     bool StartBreak(int64_t breakDuration = 300);// 开启全屏/悬浮休息 (默认5分钟)
     bool SkipBreak();                            // 结束/跳过休息
 

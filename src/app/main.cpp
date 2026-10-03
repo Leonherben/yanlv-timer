@@ -13,6 +13,7 @@
 #include "src/ui/quick_start_popup.h"
 #include "src/ui/break_fullscreen.h"
 #include "src/ui/management_window.h"
+#include "src/ui/modern_menu.h"
 #include "src/app/tray_icon.h"
 #include "src/utils/updater.h"
 
@@ -27,6 +28,9 @@ constexpr UINT_PTR TIMER_ID_ENGINE_TICK = 1001;
 enum TrayMenuId {
     ID_TRAY_TOGGLE_CLOCK = 4001,
     ID_TRAY_START_STUDY,
+    ID_TRAY_PAUSE_RESUME,
+    ID_TRAY_ABORT_STUDY,
+    ID_TRAY_CANCEL_STUDY,
     ID_TRAY_MANAGEMENT,
     ID_TRAY_CHECK_UPDATE,
     ID_TRAY_EXIT
@@ -61,18 +65,33 @@ LRESULT CALLBACK MessageWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             POINT pt;
             GetCursorPos(&pt);
 
-            HMENU hMenu = CreatePopupMenu();
+            TimerState st = TimerEngine::Instance().GetState();
             bool clockVisible = FloatingClock::Instance().IsVisible();
-            AppendMenuW(hMenu, MF_STRING, ID_TRAY_TOGGLE_CLOCK, clockVisible ? L"隐藏悬浮时钟" : L"显示悬浮时钟");
-            AppendMenuW(hMenu, MF_STRING, ID_TRAY_START_STUDY, L"开始专注...");
-            AppendMenuW(hMenu, MF_STRING, ID_TRAY_MANAGEMENT, L"控制中心 (统计与记录)...");
-            AppendMenuW(hMenu, MF_STRING, ID_TRAY_CHECK_UPDATE, L"检查更新...");
-            AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-            AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"退出言律时钟");
 
-            SetForegroundWindow(hWnd);
-            int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hWnd, nullptr);
-            DestroyMenu(hMenu);
+            std::vector<ModernMenuItem> items;
+            items.push_back(ModernMenuItem::Item(ID_TRAY_TOGGLE_CLOCK, clockVisible ? L"隐藏悬浮时钟" : L"显示悬浮时钟"));
+
+            if (st == TimerState::Idle) {
+                items.push_back(ModernMenuItem::Item(ID_TRAY_START_STUDY, L"开始专注..."));
+            } else if (st == TimerState::Studying) {
+                items.push_back(ModernMenuItem::Item(ID_TRAY_PAUSE_RESUME, L"暂停专注"));
+                items.push_back(ModernMenuItem::Item(ID_TRAY_ABORT_STUDY, L"提前结束本轮"));
+                items.push_back(ModernMenuItem::Item(ID_TRAY_CANCEL_STUDY, L"取消学习 (不计入记录)", false, true));
+            } else if (st == TimerState::Paused) {
+                items.push_back(ModernMenuItem::Item(ID_TRAY_PAUSE_RESUME, L"继续专注"));
+                items.push_back(ModernMenuItem::Item(ID_TRAY_ABORT_STUDY, L"提前结束本轮"));
+                items.push_back(ModernMenuItem::Item(ID_TRAY_CANCEL_STUDY, L"取消学习 (不计入记录)", false, true));
+            } else if (st == TimerState::Breaking) {
+                items.push_back(ModernMenuItem::Item(ID_TRAY_ABORT_STUDY, L"结束本次休息"));
+            }
+
+            items.push_back(ModernMenuItem::Separator());
+            items.push_back(ModernMenuItem::Item(ID_TRAY_MANAGEMENT, L"控制中心"));
+            items.push_back(ModernMenuItem::Item(ID_TRAY_CHECK_UPDATE, L"检查更新..."));
+            items.push_back(ModernMenuItem::Separator());
+            items.push_back(ModernMenuItem::Item(ID_TRAY_EXIT, L"退出言律时钟"));
+
+            int cmd = ModernMenu::Show(hWnd, pt.x, pt.y, items);
 
             switch (cmd) {
             case ID_TRAY_TOGGLE_CLOCK:
@@ -85,6 +104,17 @@ LRESULT CALLBACK MessageWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 QuickStartPopup::Instance().ShowNear(x, y);
                 break;
             }
+            case ID_TRAY_PAUSE_RESUME:
+                if (st == TimerState::Studying) TimerEngine::Instance().Pause();
+                else if (st == TimerState::Paused) TimerEngine::Instance().Resume();
+                break;
+            case ID_TRAY_ABORT_STUDY:
+                if (st == TimerState::Breaking) TimerEngine::Instance().SkipBreak();
+                else TimerEngine::Instance().Abort();
+                break;
+            case ID_TRAY_CANCEL_STUDY:
+                TimerEngine::Instance().CancelStudy();
+                break;
             case ID_TRAY_MANAGEMENT:
                 ManagementWindow::Instance().Show();
                 break;

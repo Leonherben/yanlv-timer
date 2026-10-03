@@ -38,6 +38,8 @@ private:
     HWND m_hBtn25 = nullptr;
     HWND m_hBtn45 = nullptr;
     HWND m_hBtn60 = nullptr;
+    HWND m_hBtnClose = nullptr;
+    int m_selectedPreset = 25;
 
     HFONT m_hFont = nullptr;
     HFONT m_hFontBold = nullptr;

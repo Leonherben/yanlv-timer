@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(YanlvTimer LANGUAGES C CXX)
+project(YanlvTimer VERSION 1.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,8 +37,10 @@ set(SOURCES
     src/ui/quick_start_popup.cpp
     src/ui/break_fullscreen.cpp
     src/ui/management_window.cpp
+    src/ui/modern_menu.cpp
     src/app/tray_icon.cpp
     src/app/main.cpp
+    src/app/app.rc
 )
 
 add_executable(YanlvTimer WIN32 ${SOURCES})
@@ -61,6 +63,7 @@ target_link_libraries(YanlvTimer PRIVATE
     mfreadwrite
     strmiids
     oleaut32
+    dwmapi
 )
 
 # 单元测试目标

@@ -1,4 +1,5 @@
 #include "src/app/tray_icon.h"
+#include "src/app/resource.h"
 
 namespace yanlv {
 
@@ -22,7 +23,10 @@ bool TrayIcon::Initialize(HWND hCallbackWnd, UINT uCallbackMsg) {
     m_nid.uID = 100;
     m_nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     m_nid.uCallbackMessage = uCallbackMsg;
-    m_nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION); // 系统默认时钟应用图标
+    
+    HINSTANCE hInst = GetModuleHandleW(nullptr);
+    HICON hAppIcon = LoadIconW(hInst, MAKEINTRESOURCEW(IDI_APP_ICON));
+    m_nid.hIcon = hAppIcon ? hAppIcon : LoadIcon(nullptr, IDI_APPLICATION);
     wcscpy_s(m_nid.szTip, L"言律时钟 - 待开始");
 
     m_installed = Shell_NotifyIconW(NIM_ADD, &m_nid);

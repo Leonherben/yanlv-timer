@@ -100,6 +100,25 @@ bool TimerEngine::Abort() {
     return true;
 }
 
+bool TimerEngine::CancelStudy() {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    TimerState curr = m_state.load();
+    if (curr != TimerState::Studying && curr != TimerState::Paused) {
+        return false;
+    }
+
+    // 取消本次学习：直接清理活跃心跳会话，彻底放弃，不计入历史记录
+    Repository::Instance().ClearActiveSession();
+    m_accumulatedSeconds = 0;
+    m_plannedDuration = 0;
+    SetState(TimerState::Idle);
+
+    if (m_onTick) {
+        m_onTick(0, 0);
+    }
+    return true;
+}
+
 void TimerEngine::FinalizeStudyRecord(FinishType finishType) {
     int64_t actualSeconds = m_accumulatedSeconds;
     if (m_state.load() == TimerState::Studying) {
